@@ -7,3 +7,4 @@ D1-cache-inline,44064828900,2026-11-17T10:26:19Z,success,second build took the R
 D1-cache-local,44064437354,2026-11-17T10:23:48Z,success,second build took the RUN layer from the cache
 D1-cache-s3,44065860506,2026-11-17T10:32:00Z,success,against Adobe S3Mock
 D1-cache-azblob,44065866852,2026-11-17T10:32:00Z,success,against Azurite
+D1-cache-multiplatformbare,44066247421,2026-11-17T10:33:00Z,success,tag lists linux/amd64 and linux/arm64 without setup-qemu-action

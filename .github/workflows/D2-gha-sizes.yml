@@ -51,14 +51,20 @@ jobs:
           echo "$row"
           mkdir -p studies/D2-docker-cache-backends/results
           out=studies/D2-docker-cache-backends/results/gha-sizes.csv
-          [ -f "$out" ] || echo "date_utc,run_id,image,backend,cache_entries,cache_bytes,runner_image" > "$out"
-          echo "$row" >> "$out"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$out"
-          git commit -m "D2: gha cache size, $IMAGE $MODE"
+          # Pull first, then append, so a row is never added to a stale copy of the file (the first version of this step
+          # appended and then rebased, and the rebase conflicted on the file in every job after the first).
+          pushed=no
           for _ in 1 2 3 4 5 6; do
-            git pull --rebase origin main && git push origin HEAD:main && break
+            git pull -q --rebase origin main
+            [ -f "$out" ] || echo "date_utc,run_id,image,backend,cache_entries,cache_bytes,runner_image" > "$out"
+            echo "$row" >> "$out"
+            git add "$out"
+            git commit -q -m "D2: gha cache size, $IMAGE $MODE"
+            if git push -q origin HEAD:main; then pushed=yes; break; fi
+            git reset -q --hard origin/main
             sleep 5
           done
+          [ "$pushed" = yes ] || { echo "::error::the row was not pushed"; exit 1; }
           jq -r '.[].id' mine.json | while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY" || true; done
