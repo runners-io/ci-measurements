@@ -45,7 +45,7 @@ ECOS = [
     dict(
         name="gradle", lock="build.gradle", glob="'**/*.gradle*', '**/gradle-wrapper.properties'",
         paths=["~/.gradle/caches", "~/.gradle/wrapper"], measure=["$HOME/.gradle/caches", "$HOME/.gradle/wrapper"],
-        install="chmod +x gradlew && ./gradlew --no-daemon build -x test", find="\\( -name '*.gradle*' -o -name gradle-wrapper.properties \\)",
+        install="chmod +x gradlew && ./gradlew --no-daemon build -x test", find="\\( -path '*.gradle*' -o -name gradle-wrapper.properties \\)",
     ),
     dict(
         name="maven", lock="pom.xml", glob="'**/pom.xml'",
@@ -146,6 +146,11 @@ def snap(e, label):
         f"      - name: Snapshot the key's input files ({label})\n        run: |\n"
         f"          find . -type f {e['find']} | sort | xargs sha256sum > \"$RUNNER_TEMP/keyfiles-{label}.txt\"\n"
         f"          cat \"$RUNNER_TEMP/keyfiles-{label}.txt\""
+        + (
+            "\n          echo \"HASH_BEFORE=${{ hashFiles(" + e["glob"] + ") }}\" >> \"$GITHUB_ENV\""
+            if label == "before"
+            else ""
+        )
     )
 
 
@@ -194,13 +199,10 @@ def job(e, phase, needs):
     lines.append(snap(e, "after"))
     lines.append(
         "      - name: Did the install change a file the key is made from?\n        run: |\n"
-        "          if diff \"$RUNNER_TEMP/keyfiles-before.txt\" \"$RUNNER_TEMP/keyfiles-after.txt\" > \"$RUNNER_TEMP/keydrift.txt\"; then\n"
-        "            echo 'KEY_DRIFT=no' >> \"$GITHUB_ENV\"\n"
-        "          else\n"
-        "            echo 'KEY_DRIFT=yes' >> \"$GITHUB_ENV\"; cat \"$RUNNER_TEMP/keydrift.txt\"\n"
-        "          fi\n"
-        "          echo \"hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}\"\n"
-        "          echo \"hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-" + name + "-${{ hashFiles(" + e["glob"] + ") }}\""
+        "          diff \"$RUNNER_TEMP/keyfiles-before.txt\" \"$RUNNER_TEMP/keyfiles-after.txt\" > \"$RUNNER_TEMP/keydrift.txt\" || cat \"$RUNNER_TEMP/keydrift.txt\"\n"
+        "          HASH_AFTER=\"${{ hashFiles(" + e["glob"] + ") }}\"\n"
+        "          echo \"hashFiles before the install: $HASH_BEFORE\"; echo \"hashFiles after the install:  $HASH_AFTER\"\n"
+        "          if [ \"$HASH_BEFORE\" = \"$HASH_AFTER\" ]; then echo 'KEY_DRIFT=no' >> \"$GITHUB_ENV\"; else echo 'KEY_DRIFT=yes' >> \"$GITHUB_ENV\"; fi"
     )
     meas = " ".join(f"\"{m}\"" for m in e["measure"])
     lines.append(
