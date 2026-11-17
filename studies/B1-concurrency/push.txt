@@ -1,1 +1,1 @@
-queue-max-cancel rep 1 push 1
+queue-max-cancel rep 1 push 2
