@@ -1,0 +1,120 @@
+name: F2 · test splitting by timing
+
+# Measures one real test suite (networkx, pinned) split three ways at 2, 4, 8 and 16
+# shards, and unsplit. Public repository, GitHub-hosted runners, so it costs nothing.
+# `mode: baseline` runs the whole suite in one job, ten times, and stores per-test
+# durations (pytest-split's format) as an artifact. `mode: split` reads the committed
+# studies/F2-test-splitting/durations.json and runs every shard of every strategy.
+# Step and job times are read afterwards from the jobs API (studies/F2-test-splitting/scripts/collect.py).
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: baseline or split
+        required: true
+        default: split
+        type: choice
+        options: [baseline, split]
+      reps:
+        description: baseline repetitions (baseline mode only)
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+env:
+  NETWORKX_REF: 49ca2290b80c1389eb4d8d8e49dcba73f8fec016 # networkx-3.7
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        env:
+          MODE: ${{ inputs.mode }}
+          REPS: ${{ inputs.reps }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          if os.environ["MODE"] == "baseline":
+              inc = [{"strategy": "none", "shards": 1, "index": 0, "rep": r} for r in range(1, int(os.environ["REPS"]) + 1)]
+          else:
+              inc = [{"strategy": s, "shards": n, "index": i, "rep": 1}
+                     for s in ("count", "greedy", "pytest-split") for n in (2, 4, 8, 16) for i in range(n)]
+          print("matrix=" + json.dumps({"include": inc}, separators=(",", ":")))
+          PY
+
+  test:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: ${{ matrix.strategy }} ${{ matrix.shards }} shard ${{ matrix.index }} rep ${{ matrix.rep }}
+    steps:
+      - name: checkout measurements
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: checkout networkx
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: networkx/networkx
+          ref: ${{ env.NETWORKX_REF }}
+          path: nx
+      - name: setup-python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: install
+        working-directory: nx
+        run: |
+          python -m pip install --quiet -e '.[default,test]' pytest-split
+          python --version; pip list 2>/dev/null | grep -i -E '^(networkx|pytest|numpy|scipy|pandas|matplotlib|pytest-split) '
+      - name: select tests
+        id: sel
+        env:
+          STRATEGY: ${{ matrix.strategy }}
+          SHARDS: ${{ matrix.shards }}
+          INDEX: ${{ matrix.index }}
+        run: |
+          case "$STRATEGY" in
+            count|greedy)
+              python studies/F2-test-splitting/scripts/split.py "$STRATEGY" "$SHARDS" "$INDEX" nx studies/F2-test-splitting/durations.json > shard-files.txt
+              sed -i 's#^#nx/#' shard-files.txt ;;
+            *) : > shard-files.txt ;;
+          esac
+          echo "files=$(wc -l < shard-files.txt)" | tee -a "$GITHUB_OUTPUT"
+      - name: pytest
+        working-directory: nx
+        env:
+          STRATEGY: ${{ matrix.strategy }}
+          SHARDS: ${{ matrix.shards }}
+          INDEX: ${{ matrix.index }}
+        run: |
+          set +e
+          case "$STRATEGY" in
+            none)
+              pytest networkx -p no:cacheprovider -q --store-durations --durations-path "$GITHUB_WORKSPACE/test-durations.json" --junitxml "$GITHUB_WORKSPACE/junit.xml" 2>&1 | tee "$GITHUB_WORKSPACE/pytest.log" ;;
+            count|greedy)
+              sed 's#^nx/##' "$GITHUB_WORKSPACE/shard-files.txt" > "$GITHUB_WORKSPACE/args.txt"
+              pytest -p no:cacheprovider -q $(cat "$GITHUB_WORKSPACE/args.txt") 2>&1 | tee "$GITHUB_WORKSPACE/pytest.log" ;;
+            pytest-split)
+              pytest networkx -p no:cacheprovider -q --splits "$SHARDS" --group "$((INDEX + 1))" --splitting-algorithm least_duration --durations-path "$GITHUB_WORKSPACE/studies/F2-test-splitting/durations.json" 2>&1 | tee "$GITHUB_WORKSPACE/pytest.log" ;;
+          esac
+          exit "${PIPESTATUS[0]}"
+      - name: record
+        if: always()
+        run: |
+          tail -n 1 pytest.log > summary.txt || true
+          mkdir -p out && cp summary.txt out/ && cp shard-files.txt out/ 2>/dev/null || true
+          if [ "${{ matrix.strategy }}" = none ]; then cp test-durations.json junit.xml out/ 2>/dev/null || true; fi
+      - name: upload
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: r-${{ matrix.strategy }}-${{ matrix.shards }}-${{ matrix.index }}-${{ matrix.rep }}
+          path: out
