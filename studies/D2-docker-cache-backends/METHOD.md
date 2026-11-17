@@ -68,8 +68,9 @@ One workflow dispatch is one repetition (`rep` in the CSV). Repetitions ran one 
 After each repetition the workflow deletes the cache entries BuildKit and `local` wrote.
 
 The summary is the **median** of the repetitions and the **range** (lowest to highest), per image, backend and phase. `none`
-has no cache, so its three phases are the same build, and its row pools all of them. With N repetitions a cell has N values
-(3N for `none`); the post and `results/summary.csv` give N.
+has no cache, so its three phases are the same build, and its row pools all of them. There were **6 repetitions** (`rep` 1 to 6), so a cell has 6 values (18 for `none`). `rep` 0 is a smoke run of the
+Node image on five backends, kept in `results/runs/44063275157.csv` and left out of every figure. `results/summary.csv`
+holds the medians and ranges.
 
 ## Cache sizes
 
@@ -77,6 +78,11 @@ has no cache, so its three phases are the same build, and its row pools all of t
 `inline`: not sized, because the cache is inside the image. `gha`: `D2-gha-sizes.yml` builds each Dockerfile once with
 `type=gha` in a quiet repository and adds up BuildKit's own cache entries (the keys beginning `index-` and `buildkit-blob-`),
 then deletes them. Bytes are as stored (gzip), not as unpacked.
+
+The `gha` sizes were taken once per image and mode (not per repetition) in a quiet repository, so they are single readings. The
+first run of that workflow (run 44073547046) lost five of its six rows because each job rebased a stale copy of the CSV; the
+numbers it logged matched the second run to within 0.01 MB for Go and Python and 0.002 MB for Node, and the second run
+(44076225571, with the step fixed to pull before it appends) is what `results/gha-sizes.csv` holds.
 
 ## What this does and does not show
 
