@@ -1,0 +1,95 @@
+name: A2 · what a checkout costs
+
+# Times actions/checkout on one public repository with one set of inputs per cell, ten times each, in a
+# shuffled order, on GitHub-hosted ubuntu-24.04 runners. Public repository, so it costs nothing.
+# `kind: history` varies fetch-depth, filter and sparse-checkout; `kind: submodules` varies submodules.
+# One workflow run is one repository, because a run may hold at most 256 jobs. Each cell uploads one CSV row;
+# studies/A2-checkout-cost/scripts/collect.py gathers them. Method: studies/A2-checkout-cost/METHOD.md.
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: history or submodules
+        required: true
+        default: history
+        type: choice
+        options: [history, submodules]
+      repo:
+        description: owner/name of the public repository to check out
+        required: true
+        type: string
+      reps:
+        description: runs per cell
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.p.outputs.matrix }}
+      sha: ${{ steps.p.outputs.sha }}
+    steps:
+      - name: checkout measurements
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: p
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KIND: ${{ inputs.kind }}
+          REPO: ${{ inputs.repo }}
+          REPS: ${{ inputs.reps }}
+        run: python3 studies/A2-checkout-cost/scripts/plan.py "$KIND" "$REPO" "$REPS" >> "$GITHUB_OUTPUT"
+
+  cell:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: ${{ matrix.config }} #${{ matrix.rep }}
+    steps:
+      - name: checkout measurements
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: harness
+      - id: t0
+        run: echo "t=$(date +%s.%N)" >> "$GITHUB_OUTPUT"
+      - name: the checkout under test
+        if: matrix.config != 'control'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ needs.plan.outputs.sha }}
+          path: target
+          fetch-depth: ${{ matrix.depth }}
+          filter: ${{ matrix.filter }}
+          sparse-checkout: ${{ matrix.sparse }}
+          submodules: ${{ matrix.submodules }}
+          persist-credentials: false
+      - id: t1
+        run: echo "t=$(date +%s.%N)" >> "$GITHUB_OUTPUT"
+      - name: measure
+        env:
+          KIND: ${{ inputs.kind }}
+          REPO: ${{ inputs.repo }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          CONFIG: ${{ matrix.config }}
+          REP: ${{ matrix.rep }}
+          ORDER: ${{ matrix.order }}
+          JOB_NAME: ${{ matrix.config }} #${{ matrix.rep }}
+          T0: ${{ steps.t0.outputs.t }}
+          T1: ${{ steps.t1.outputs.t }}
+        run: python3 harness/studies/A2-checkout-cost/scripts/measure.py target row.csv
+      - name: keep the row
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: row-${{ matrix.order }}
+          path: row.csv
+          retention-days: 7
