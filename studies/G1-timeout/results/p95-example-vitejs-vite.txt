@@ -1,0 +1,21 @@
+# ./timeout-p95.sh vitejs/vite 100   (run 2026-11-17, bash 5.3.15(1)-release, gh 2.103.3, jq-1.7.1-apple)
+workflow                     job                                      runs  median     p95     max timeout
+                                                                             (min)   (min)   (min)  (min)
+Bot                          AgentScan                                   8     0.2     0.5     0.5      5  (under 20 runs: treat the p95 as a guess)
+CI                           Build & Test Passed or Skipped             12     0.1     0.1     0.1      5  (under 20 runs: treat the p95 as a guess)
+CI                           Build&Test: node-20, ubuntu-latest         12     2.7     2.9     2.9      6  (under 20 runs: treat the p95 as a guess)
+CI                           Build&Test: node-22, ubuntu-latest         12     2.4     2.7     2.7      6  (under 20 runs: treat the p95 as a guess)
+CI                           Build&Test: node-24, ubuntu-latest         12     2.0     2.5     2.5      6  (under 20 runs: treat the p95 as a guess)
+CI                           Build&Test: node-26, macos-latest          12     4.7     5.1     5.1     11  (under 20 runs: treat the p95 as a guess)
+CI                           Build&Test: node-26, ubuntu-latest         12     2.4     2.5     2.5      5  (under 20 runs: treat the p95 as a guess)
+CI                           Build&Test: node-26, windows-latest        12     3.5     3.7     3.7      8  (under 20 runs: treat the p95 as a guess)
+CI                           Get changed files                          12     0.2     0.3     0.3      5  (under 20 runs: treat the p95 as a guess)
+CI                           Lint: node-26, ubuntu-latest               12     1.2     1.5     1.5      5  (under 20 runs: treat the p95 as a guess)
+CodeQL                       Analyze (actions)                           7     0.7     0.8     0.8      5  (under 20 runs: treat the p95 as a guess)
+Issue Close Require          close-issues                                1     1.1     1.1     1.1      5  (under 20 runs: treat the p95 as a guess)
+Lock Closed Issues           action                                      1     0.2     0.2     0.2      5  (under 20 runs: treat the p95 as a guess)
+Preview release              preview                                     3     0.4     0.5     0.5      5  (under 20 runs: treat the p95 as a guess)
+Publish Package              Detect release commit                       3     0.6     0.6     0.6      5  (under 20 runs: treat the p95 as a guess)
+Semantic Pull Request        Semantic Pull Request                      42     0.1     0.2     0.2      5
+Semgrep                      Run Semgrep                                 1     1.0     1.0     1.0      5  (under 20 runs: treat the p95 as a guess)
+Zizmor                       Run zizmor                                 22     0.3     0.5     0.5      5
