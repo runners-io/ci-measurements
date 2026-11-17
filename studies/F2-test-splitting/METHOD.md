@@ -45,7 +45,7 @@ the pytest step; `pytest_reported_s` is the figure pytest printed. "Fixed" in th
   seconds, billed minutes (`ceil(job_seconds / 60)`) and pytest's pass counts.
 - Every configuration ran all 9,320 passing tests in total, with 0 failures (checked in `collect.py`'s `passed` and `failed` columns).
 - `scripts/collect.py` rebuilds the CSVs from the jobs API and the run artifacts; `scripts/split.py` is the greedy splitter.
-- `.github/workflows/F2-test-splitting.yml` is the workflow; `F2-collection-cost.yml` times pytest's collection alone (run 44069739581, 5 reps, `results/collection.csv`: whole suite median 9.9 s, 9.3 to 10.1; the one file `test_common.py` alone 0.65 s); `F2-recipe.yml` is the workflow the post prints.
+- `.github/workflows/F2-test-splitting.yml` is the workflow; `F2-collection-cost.yml` times pytest's collection alone (run 44069739581, 5 reps, `results/collection.csv`: whole suite median 9.9 s, 9.3 to 10.1; the one file `test_common.py` alone 0.65 s); `F2-recipe.yml` is the workflow the post prints; it ran once as a check (run 44070160168, 4 shards, all succeeded, `results/recipe.csv`).
 
 ## Limits
 
