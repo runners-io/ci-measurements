@@ -51,7 +51,8 @@ if E["CONFIG"] == "control" or not repo_dir.exists():
 else:
     row["git_kb"] = du_kb(repo_dir / ".git")
     row["tree_kb"] = du_kb(repo_dir, exclude=".git")
-    _, files, _ = run(["bash", "-c", "git ls-files | wc -l"])
+    # Files on disk, not in the index: a sparse checkout lists every path in the index and keeps only some of them.
+    _, files, _ = run(["bash", "-c", "find . -path ./.git -prune -o -type f -print | wc -l"])
     row["files"] = files
     _, commits, _ = run(["git", "rev-list", "--count", "HEAD"])
     row["commits"] = commits
