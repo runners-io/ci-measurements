@@ -1,0 +1,31 @@
+name: D · delete GHCR tags
+# Deletes the container tags the D1 and D2 studies pushed, by prefix. The studies push test images and cache images to
+# ghcr.io/runners-io/ci-measurements with the GITHUB_TOKEN of this repository; this removes them again.
+on:
+  workflow_dispatch:
+    inputs:
+      prefix:
+        description: "Delete every version with a tag starting with this (d1- or d2)"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  delete:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Delete the versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREFIX: ${{ inputs.prefix }}
+        run: |
+          case "$PREFIX" in d1-*|d2*) ;; *) echo "refusing prefix $PREFIX"; exit 1 ;; esac
+          gh api --paginate "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/ci-measurements/versions?per_page=100" \
+            --jq ".[] | select(any(.metadata.container.tags[]?; startswith(\"$PREFIX\"))) | .id" > ids.txt
+          wc -l < ids.txt
+          while read -r id; do
+            gh api -X DELETE "/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/ci-measurements/versions/$id" && echo "deleted $id"
+          done < ids.txt
