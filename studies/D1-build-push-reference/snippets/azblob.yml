@@ -9,6 +9,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
     steps:
       - uses: actions/checkout@v7
       - uses: docker/login-action@v4
@@ -27,5 +29,5 @@ jobs:
           context: studies/D1-build-push-reference
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
-          cache-from: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
-          cache-to: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==,mode=max
+          cache-from: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=${{ env.AZURE_STORAGE_KEY }}
+          cache-to: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=${{ env.AZURE_STORAGE_KEY }},mode=max

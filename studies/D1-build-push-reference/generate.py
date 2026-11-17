@@ -94,6 +94,8 @@ TYPES["local"] = dict(
 )
 TYPES["s3"] = dict(
     title="type=s3",
+    env_snippet="    env:\n      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}\n      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}\n",
+    env_harness="    env:\n      S3_ACCESS_KEY_ID: d1access\n      S3_SECRET_ACCESS_KEY: d1secret-d1secret\n",
     pre="""      - name: Start an S3-compatible server (Adobe S3Mock) with a bucket
         run: |
           docker run -d --name s3mock --network host adobe/s3mock
@@ -109,12 +111,14 @@ TYPES["s3"] = dict(
           context: studies/D1-build-push-reference
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
-          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret
-          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret,mode=max
+          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=${{ env.S3_ACCESS_KEY_ID }},secret_access_key=${{ env.S3_SECRET_ACCESS_KEY }}
+          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=${{ env.S3_ACCESS_KEY_ID }},secret_access_key=${{ env.S3_SECRET_ACCESS_KEY }},mode=max
 """,
 )
 TYPES["azblob"] = dict(
     title="type=azblob",
+    env_snippet="    env:\n      AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}\n",
+    env_harness="    env:\n      # Azurite's documented development account key, the same for every Azurite\n      AZURE_STORAGE_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==\n",
     pre="""      - name: Start Azurite, the Azure Storage emulator
         run: |
           docker run -d --name azurite --network host mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 127.0.0.1 --skipApiVersionCheck
@@ -128,8 +132,8 @@ TYPES["azblob"] = dict(
           context: studies/D1-build-push-reference
           push: true
           tags: ghcr.io/${{ github.repository }}:latest
-          cache-from: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
-          cache-to: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==,mode=max
+          cache-from: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=${{ env.AZURE_STORAGE_KEY }}
+          cache-to: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=${{ env.AZURE_STORAGE_KEY }},mode=max
 """,
 )
 
@@ -173,7 +177,8 @@ def pin(text: str) -> str:
 
 def snippet(t):
     return (
-        "name: ci\n\non:\n  push:\n\njobs:\n  docker:\n    runs-on: ubuntu-24.04\n    permissions:\n      contents: read\n      packages: write\n    steps:\n"
+        "name: ci\n\non:\n  push:\n\njobs:\n  docker:\n    runs-on: ubuntu-24.04\n    permissions:\n      contents: read\n      packages: write\n"
+        + t.get("env_snippet", "") + "    steps:\n"
         + CHECKOUT + LOGIN + t["pre"] + t["setup"] + t["build"]
     )
 
@@ -235,7 +240,8 @@ def harness(name, t):
         f"name: D1 · {t['title']}\n"
         "# Study D1: the workflow printed on the post, plus a second build on a fresh builder. The two images carry the same\n"
         "# /stamp only if the second build took the RUN layer from the cache. See studies/D1-build-push-reference/METHOD.md.\n"
-        "on:\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  docker:\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n      packages: write\n      actions: read\n    steps:\n"
+        "on:\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  docker:\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n      packages: write\n      actions: read\n"
+        + t.get("env_harness", "") + "    steps:\n"
         + CHECKOUT + LOGIN + empty + pre + first + reset + second + compare
     )
     return body

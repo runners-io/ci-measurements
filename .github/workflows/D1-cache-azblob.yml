@@ -15,6 +15,9 @@ jobs:
       contents: read
       packages: write
       actions: read
+    env:
+      # Azurite's documented development account key, the same for every Azurite
+      AZURE_STORAGE_KEY: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
@@ -33,8 +36,8 @@ jobs:
           context: studies/D1-build-push-reference
           push: true
           tags: ghcr.io/${{ github.repository }}:d1-azblob
-          cache-from: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
-          cache-to: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==,mode=max
+          cache-from: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=${{ env.AZURE_STORAGE_KEY }}
+          cache-to: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=${{ env.AZURE_STORAGE_KEY }},mode=max
       - name: Read /stamp from the image just pushed
         id: first
         run: echo "stamp=$(docker run --rm ghcr.io/${{ github.repository }}:d1-azblob)" >> "$GITHUB_OUTPUT"
@@ -51,8 +54,8 @@ jobs:
           context: studies/D1-build-push-reference
           push: true
           tags: ghcr.io/${{ github.repository }}:d1-azblob
-          cache-from: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
-          cache-to: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==,mode=max
+          cache-from: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=${{ env.AZURE_STORAGE_KEY }}
+          cache-to: type=azblob,account_url=http://127.0.0.1:10000/devstoreaccount1,account_name=devstoreaccount1,container=buildcache,name=app,secret_access_key=${{ env.AZURE_STORAGE_KEY }},mode=max
       - name: Read /stamp from the image just pushed
         id: second
         run: echo "stamp=$(docker run --rm ghcr.io/${{ github.repository }}:d1-azblob)" >> "$GITHUB_OUTPUT"

@@ -15,6 +15,9 @@ jobs:
       contents: read
       packages: write
       actions: read
+    env:
+      S3_ACCESS_KEY_ID: d1access
+      S3_SECRET_ACCESS_KEY: d1secret-d1secret
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
@@ -35,8 +38,8 @@ jobs:
           context: studies/D1-build-push-reference
           push: true
           tags: ghcr.io/${{ github.repository }}:d1-s3
-          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret
-          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret,mode=max
+          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=${{ env.S3_ACCESS_KEY_ID }},secret_access_key=${{ env.S3_SECRET_ACCESS_KEY }}
+          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=${{ env.S3_ACCESS_KEY_ID }},secret_access_key=${{ env.S3_SECRET_ACCESS_KEY }},mode=max
       - name: Read /stamp from the image just pushed
         id: first
         run: echo "stamp=$(docker run --rm ghcr.io/${{ github.repository }}:d1-s3)" >> "$GITHUB_OUTPUT"
@@ -53,8 +56,8 @@ jobs:
           context: studies/D1-build-push-reference
           push: true
           tags: ghcr.io/${{ github.repository }}:d1-s3
-          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret
-          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret,mode=max
+          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=${{ env.S3_ACCESS_KEY_ID }},secret_access_key=${{ env.S3_SECRET_ACCESS_KEY }}
+          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=${{ env.S3_ACCESS_KEY_ID }},secret_access_key=${{ env.S3_SECRET_ACCESS_KEY }},mode=max
       - name: Read /stamp from the image just pushed
         id: second
         run: echo "stamp=$(docker run --rm ghcr.io/${{ github.repository }}:d1-s3)" >> "$GITHUB_OUTPUT"
