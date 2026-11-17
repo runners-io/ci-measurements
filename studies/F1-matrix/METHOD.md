@@ -40,3 +40,22 @@ F1-13 is observed behaviour that GitHub's documentation does not state, on one d
 `results/jobs-started.csv`: every job GitHub started, one row per job, with workflow, run id, job name as GitHub printed it,
 conclusion and UTC start and completion. `collect.py` regenerates it from the jobs API.
 The same job names are the test fixtures of the expander on runners.io (`lib/matrix-expander/expand.test.ts`).
+
+## Read from the run pages and the jobs API, not in the CSV
+
+Error text GitHub printed (read from the run page on 2026-11-17):
+
+- Run 44064193197 (F1-06b): "Error when evaluating 'strategy' for job 'test'." and "Matrix vector 'dir' does not contain any values". Only the `plan` job ran.
+- Run 44064615210 (F1-11, 257 legs): "Strategy for job 'leg' produced 257 configurations which exceeds the maximum of 256 configurations". The `plan` job ran and succeeded; no `leg` job started.
+
+Step times of run 44063610716 (F1-10), from the jobs API, UTC:
+
+| step | start | end |
+|---|---|---|
+| two sleeps of 10 s in a row | 10:20:41 | 10:21:03 |
+| background a, background b, wait for both | 10:21:03 | 10:21:13 |
+| `parallel` group of p1 and p2 (10 s each) | 10:21:13 | 10:21:23 |
+
+Output of the `report` job of run 44063605573 (F1-08), from the job log: `{"shared": "leg-2", "output_1": "built-1", "output_3": "built-3", "output_2": "built-2"}`; the `shared` output was written by all three legs and one value came back.
+
+F1-06's workflow comment was reworded after the runs ("fails when the matrix is evaluated"); no line of YAML changed.

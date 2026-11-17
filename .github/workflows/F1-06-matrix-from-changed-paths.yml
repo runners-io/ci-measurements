@@ -28,7 +28,7 @@ jobs:
           cat "$GITHUB_OUTPUT"
   test:
     needs: plan
-    # An empty array is not a matrix: without this guard the workflow fails at startup.
+    # An empty array is not a matrix: without this guard the run fails when the matrix is evaluated.
     if: needs.plan.outputs.dirs != '[]'
     runs-on: ubuntu-24.04
     strategy:
