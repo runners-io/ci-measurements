@@ -17,6 +17,8 @@ CASES = [
     ("depth0", {"fetch-depth": "0"}),
     ("depth2", {"fetch-depth": "2"}),
     ("depth1-fetch-tags", {"fetch-depth": "1", "fetch-tags": "true"}),
+    # No ref: the default branch, which is what a push-triggered workflow's ref looks like. The case above passes a commit SHA.
+    ("depth1-fetch-tags-branch", {"fetch-depth": "1", "fetch-tags": "true", "ref": None}),
     ("sparse-cone-dir", {"sparse-checkout": "src"}),
     ("sparse-file-non-cone", {"sparse-checkout": "README.md", "sparse-checkout-cone-mode": "false"}),
     ("filter-blobnone", {"filter": "blob:none", "fetch-depth": "0"}),
@@ -52,11 +54,11 @@ for v in VERSIONS:
           sha=$(git ls-remote https://github.com/actions/checkout "refs/tags/{v}" "refs/tags/{v}^{{}}" | tail -1 | cut -f1)
           echo "{v},tag-points-at,$sha,,,,,,,,,,," >> observations.csv""")
     for name, inputs in CASES:
-        w = "".join(f"          {k}: '{v_}'\n" for k, v_ in inputs.items())
+        w = "".join(f"          {k}: '{v_}'\n" for k, v_ in inputs.items() if v_ is not None)
+        sha_ref = "" if "ref" in inputs else f"          ref: {TARGET_SHA}\n"
         with_block = f"""        with:
           repository: {TARGET}
-          ref: {TARGET_SHA}
-          path: t-{name}
+{sha_ref}          path: t-{name}
 {w}""".rstrip("\n") + "\n"
         out.append(f"""      - name: "{name}"
         id: c-{name}

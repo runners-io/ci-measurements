@@ -65,6 +65,16 @@ jobs:
           fetch-tags: 'true'
       - name: "observe depth1-fetch-tags"
         run: harness/studies/A1-checkout-reference/scripts/observe.sh "v4" "depth1-fetch-tags" "t-depth1-fetch-tags" "${{ steps.c-depth1-fetch-tags.outputs.commit }}" "${{ steps.c-depth1-fetch-tags.outputs.ref }}" >> observations.csv
+      - name: "depth1-fetch-tags-branch"
+        id: c-depth1-fetch-tags-branch
+        uses: actions/checkout@v4
+        with:
+          repository: actions/checkout
+          path: t-depth1-fetch-tags-branch
+          fetch-depth: '1'
+          fetch-tags: 'true'
+      - name: "observe depth1-fetch-tags-branch"
+        run: harness/studies/A1-checkout-reference/scripts/observe.sh "v4" "depth1-fetch-tags-branch" "t-depth1-fetch-tags-branch" "${{ steps.c-depth1-fetch-tags-branch.outputs.commit }}" "${{ steps.c-depth1-fetch-tags-branch.outputs.ref }}" >> observations.csv
       - name: "sparse-cone-dir"
         id: c-sparse-cone-dir
         uses: actions/checkout@v4
@@ -168,6 +178,16 @@ jobs:
           fetch-tags: 'true'
       - name: "observe depth1-fetch-tags"
         run: harness/studies/A1-checkout-reference/scripts/observe.sh "v5" "depth1-fetch-tags" "t-depth1-fetch-tags" "${{ steps.c-depth1-fetch-tags.outputs.commit }}" "${{ steps.c-depth1-fetch-tags.outputs.ref }}" >> observations.csv
+      - name: "depth1-fetch-tags-branch"
+        id: c-depth1-fetch-tags-branch
+        uses: actions/checkout@v5
+        with:
+          repository: actions/checkout
+          path: t-depth1-fetch-tags-branch
+          fetch-depth: '1'
+          fetch-tags: 'true'
+      - name: "observe depth1-fetch-tags-branch"
+        run: harness/studies/A1-checkout-reference/scripts/observe.sh "v5" "depth1-fetch-tags-branch" "t-depth1-fetch-tags-branch" "${{ steps.c-depth1-fetch-tags-branch.outputs.commit }}" "${{ steps.c-depth1-fetch-tags-branch.outputs.ref }}" >> observations.csv
       - name: "sparse-cone-dir"
         id: c-sparse-cone-dir
         uses: actions/checkout@v5
@@ -271,6 +291,16 @@ jobs:
           fetch-tags: 'true'
       - name: "observe depth1-fetch-tags"
         run: harness/studies/A1-checkout-reference/scripts/observe.sh "v6" "depth1-fetch-tags" "t-depth1-fetch-tags" "${{ steps.c-depth1-fetch-tags.outputs.commit }}" "${{ steps.c-depth1-fetch-tags.outputs.ref }}" >> observations.csv
+      - name: "depth1-fetch-tags-branch"
+        id: c-depth1-fetch-tags-branch
+        uses: actions/checkout@v6
+        with:
+          repository: actions/checkout
+          path: t-depth1-fetch-tags-branch
+          fetch-depth: '1'
+          fetch-tags: 'true'
+      - name: "observe depth1-fetch-tags-branch"
+        run: harness/studies/A1-checkout-reference/scripts/observe.sh "v6" "depth1-fetch-tags-branch" "t-depth1-fetch-tags-branch" "${{ steps.c-depth1-fetch-tags-branch.outputs.commit }}" "${{ steps.c-depth1-fetch-tags-branch.outputs.ref }}" >> observations.csv
       - name: "sparse-cone-dir"
         id: c-sparse-cone-dir
         uses: actions/checkout@v6
@@ -374,6 +404,16 @@ jobs:
           fetch-tags: 'true'
       - name: "observe depth1-fetch-tags"
         run: harness/studies/A1-checkout-reference/scripts/observe.sh "v7" "depth1-fetch-tags" "t-depth1-fetch-tags" "${{ steps.c-depth1-fetch-tags.outputs.commit }}" "${{ steps.c-depth1-fetch-tags.outputs.ref }}" >> observations.csv
+      - name: "depth1-fetch-tags-branch"
+        id: c-depth1-fetch-tags-branch
+        uses: actions/checkout@v7
+        with:
+          repository: actions/checkout
+          path: t-depth1-fetch-tags-branch
+          fetch-depth: '1'
+          fetch-tags: 'true'
+      - name: "observe depth1-fetch-tags-branch"
+        run: harness/studies/A1-checkout-reference/scripts/observe.sh "v7" "depth1-fetch-tags-branch" "t-depth1-fetch-tags-branch" "${{ steps.c-depth1-fetch-tags-branch.outputs.commit }}" "${{ steps.c-depth1-fetch-tags-branch.outputs.ref }}" >> observations.csv
       - name: "sparse-cone-dir"
         id: c-sparse-cone-dir
         uses: actions/checkout@v7

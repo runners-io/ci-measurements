@@ -14,7 +14,7 @@ repo_dir, out = pathlib.Path(sys.argv[1]), sys.argv[2]
 E = os.environ
 
 
-def run(cmd, cwd=repo_dir, timeout=900):
+def run(cmd, cwd=repo_dir, timeout=180):
     t = time.perf_counter()
     try:
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
@@ -45,7 +45,7 @@ row = {
 
 if E["CONFIG"] == "control" or not repo_dir.exists():
     # The control cell skips the checkout: its time is what two clock readings and a step boundary cost alone.
-    for k in ("git_kb", "tree_kb", "files", "commits", "tags", "describe_rc", "describe_s", "diff_rc", "diff_s",
+    for k in ("git_kb", "tree_kb", "files", "submodules_declared", "submodules_filled", "commits", "tags", "describe_rc", "describe_s", "diff_rc", "diff_s",
               "blame_rc", "blame_s", "git_version"):
         row[k] = ""
 else:
@@ -54,6 +54,10 @@ else:
     # Files on disk, not in the index: a sparse checkout lists every path in the index and keeps only some of them.
     _, files, _ = run(["bash", "-c", "find . -path ./.git -prune -o -type f -print | wc -l"])
     row["files"] = files
+    # Submodules: how many the repository declares and how many the checkout filled in (git marks an empty one with "-").
+    _, declared, _ = run(["bash", "-c", "git submodule status | wc -l"])
+    _, filled, _ = run(["bash", "-c", "git submodule status | grep -vc '^-' || true"])
+    row["submodules_declared"], row["submodules_filled"] = declared, filled
     _, commits, _ = run(["git", "rev-list", "--count", "HEAD"])
     row["commits"] = commits
     _, tags, _ = run(["bash", "-c", "git tag | wc -l"])
@@ -68,7 +72,7 @@ else:
     row["git_version"] = v.replace("git version ", "")
 
 cols = ["date", "run_id", "job", "kind", "repo", "sha", "config", "rep", "order", "image", "git_version", "checkout_s",
-        "git_kb", "tree_kb", "files", "commits", "tags", "describe_rc", "describe_s", "diff_rc", "diff_s", "blame_rc",
+        "git_kb", "tree_kb", "files", "submodules_declared", "submodules_filled", "commits", "tags", "describe_rc", "describe_s", "diff_rc", "diff_s", "blame_rc",
         "blame_s"]
 with open(out, "w", newline="") as f:
     w = csv.DictWriter(f, fieldnames=cols)
