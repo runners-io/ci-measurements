@@ -1,0 +1,189 @@
+# C2, part B: for a real project, what does each way of caching cost against doing without?
+# One job per (ecosystem, repetition), every step on the same fresh ubuntu-24.04 runner, in this order:
+#   fresh install (nothing cached) -> save the package manager's own cache dir -> save the installed tree
+#   -> wipe everything and drop the page cache -> restore the cache dir, install from it
+#   -> wipe everything and drop the page cache -> restore the installed tree, check it works.
+# The fixtures are the C3 projects. See studies/C2-cache-vs-rebuild/METHOD.md.
+name: C2 installs
+
+on:
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: "repetitions, as a JSON list"
+        default: "[1,2,3,4,5]"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        rep: ${{ fromJSON(inputs.reps) }}
+        eco:
+          - name: npm
+            install: npm ci
+            verify: node -e "require('react'); require('webpack'); require('typescript')"
+            cache_paths: "~/.npm"
+            tree_paths: "node_modules"
+            wipe: "rm -rf node_modules ~/.npm"
+          - name: pnpm
+            setup: npm install -g pnpm
+            install: pnpm install --frozen-lockfile
+            verify: node -e "require('react'); require('webpack'); require('typescript')"
+            cache_paths: "~/.local/share/pnpm/store"
+            tree_paths: "node_modules"
+            wipe: "rm -rf node_modules ~/.local/share/pnpm"
+          - name: pip
+            python: "3.12"
+            install: python -m venv .venv && .venv/bin/pip install --quiet -r requirements.txt
+            verify: .venv/bin/python -c "import pandas, numpy, flask, requests"
+            cache_paths: "~/.cache/pip"
+            tree_paths: ".venv"
+            wipe: "rm -rf .venv ~/.cache/pip"
+          - name: cargo
+            install: cargo build --locked
+            verify: cargo build --locked
+            cache_paths: |
+              ~/.cargo/registry/index/
+              ~/.cargo/registry/cache/
+              ~/.cargo/git/db/
+            tree_paths: |
+              ~/.cargo/registry/index/
+              ~/.cargo/registry/cache/
+              ~/.cargo/git/db/
+              target/
+            wipe: "rm -rf target ~/.cargo/registry ~/.cargo/git"
+          - name: go
+            install: go build ./...
+            verify: go build ./...
+            cache_paths: "~/go/pkg/mod"
+            tree_paths: |
+              ~/go/pkg/mod
+              ~/.cache/go-build
+            wipe: "go clean -cache -modcache"
+    env:
+      ECO: ${{ matrix.eco.name }}
+      REP: ${{ matrix.rep }}
+      KEY: c2i-${{ github.run_id }}-${{ matrix.eco.name }}-${{ matrix.rep }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: _repo
+      - name: Use the fixture as the project
+        run: |
+          cp -a _repo/studies/C3-cache-recipes/fixtures/$ECO/. .
+          rm -rf _repo
+      - uses: actions/setup-python@v7
+        if: matrix.eco.python
+        with:
+          python-version: ${{ matrix.eco.python }}
+      - name: Tool setup (not timed)
+        if: matrix.eco.setup
+        run: ${{ matrix.eco.setup }}
+
+      - name: Start timer, fresh install
+        run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - name: Fresh install, nothing cached
+        run: ${{ matrix.eco.install }}
+      - name: Stop timer, measure what the install left
+        shell: bash
+        run: |
+          echo "FRESH_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+          measure() { # prints "MB FILES" for the paths on stdin-style args
+            local mb=0 files=0 p
+            for p in "$@"; do
+              p="${p/#\~/$HOME}"
+              [ -e "$p" ] || continue
+              mb=$(( mb + $(du -sm "$p" | cut -f1) ))
+              files=$(( files + $(find "$p" -type f | wc -l) ))
+            done
+            echo "$mb $files"
+          }
+          read -r cmb cfiles < <(measure $(echo '${{ matrix.eco.cache_paths }}' | tr '\n' ' '))
+          read -r tmb tfiles < <(measure $(echo '${{ matrix.eco.tree_paths }}' | tr '\n' ' '))
+          echo "CACHEDIR_MB=$cmb" >> "$GITHUB_ENV"; echo "CACHEDIR_FILES=$cfiles" >> "$GITHUB_ENV"
+          echo "TREE_MB=$tmb" >> "$GITHUB_ENV"; echo "TREE_FILES=$tfiles" >> "$GITHUB_ENV"
+          echo "cache dir: $cmb MB, $cfiles files; installed tree: $tmb MB, $tfiles files"
+
+      - name: Start timer, save the cache dir
+        run: sync && echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/cache/save@v6
+        with:
+          path: ${{ matrix.eco.cache_paths }}
+          key: ${{ env.KEY }}-dir
+      - name: Stop timer
+        run: echo "SAVE_DIR_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+
+      - name: Start timer, save the installed tree
+        run: sync && echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/cache/save@v6
+        with:
+          path: ${{ matrix.eco.tree_paths }}
+          key: ${{ env.KEY }}-tree
+      - name: Stop timer, read the stored sizes
+        run: |
+          echo "SAVE_TREE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+          echo "ENTRY_DIR_MB=$(gh cache list --key "$KEY-dir" --json sizeInBytes -q '.[0].sizeInBytes / 1048576 | floor')" >> "$GITHUB_ENV"
+          echo "ENTRY_TREE_MB=$(gh cache list --key "$KEY-tree" --json sizeInBytes -q '.[0].sizeInBytes / 1048576 | floor')" >> "$GITHUB_ENV"
+
+      - name: Wipe everything and drop the page cache
+        run: |
+          ${{ matrix.eco.wipe }}
+          sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+
+      - name: Start timer, restore the cache dir
+        run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ matrix.eco.cache_paths }}
+          key: ${{ env.KEY }}-dir
+          fail-on-cache-miss: true
+      - name: Stop timer, start the install timer
+        run: |
+          echo "RESTORE_DIR_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+          echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - name: Install with the cache dir restored
+        run: ${{ matrix.eco.install }}
+      - name: Stop timer
+        run: echo "INSTALL_FROM_DIR_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+
+      - name: Wipe everything again and drop the page cache
+        run: |
+          ${{ matrix.eco.wipe }}
+          sync; echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+
+      - name: Start timer, restore the installed tree
+        run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ matrix.eco.tree_paths }}
+          key: ${{ env.KEY }}-tree
+          fail-on-cache-miss: true
+      - name: Stop timer, start the check timer
+        run: |
+          echo "RESTORE_TREE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+          echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - name: Use the restored tree (this is what the job would do next)
+        run: ${{ matrix.eco.verify }}
+      - name: Stop timer, delete the entries, write the row
+        run: |
+          VERIFY_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')
+          gh cache delete "$KEY-dir" || true
+          gh cache delete "$KEY-tree" || true
+          mkdir -p out
+          echo "ecosystem,rep,run_id,date_utc,image,cachedir_mb,cachedir_files,tree_mb,tree_files,entry_dir_mb,entry_tree_mb,fresh_s,save_dir_s,save_tree_s,restore_dir_s,install_from_dir_s,restore_tree_s,verify_s" > out/row.csv
+          echo "$ECO,$REP,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$CACHEDIR_MB,$CACHEDIR_FILES,$TREE_MB,$TREE_FILES,$ENTRY_DIR_MB,$ENTRY_TREE_MB,$FRESH_S,$SAVE_DIR_S,$SAVE_TREE_S,$RESTORE_DIR_S,$INSTALL_FROM_DIR_S,$RESTORE_TREE_S,$VERIFY_S" >> out/row.csv
+          cat out/row.csv
+      - uses: actions/upload-artifact@v7
+        with:
+          name: c2i-${{ matrix.eco.name }}-${{ matrix.rep }}
+          path: out/
