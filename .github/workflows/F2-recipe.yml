@@ -1,0 +1,36 @@
+name: F2 recipe, four shards by recorded timing
+
+# The workflow the post prints. It splits networkx's tests four ways with pytest-split, using
+# the recorded timings committed at studies/F2-test-splitting/durations.json. Replace the
+# networkx checkout with your own repository and the durations path with yours.
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: networkx/networkx
+          ref: 49ca2290b80c1389eb4d8d8e49dcba73f8fec016
+          path: nx
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --quiet -e 'nx[default,test]' pytest-split
+      - name: run this shard
+        working-directory: nx
+        run: >
+          pytest networkx -p no:cacheprovider -q
+          --splits 4 --group ${{ matrix.group }}
+          --splitting-algorithm least_duration
+          --durations-path ../studies/F2-test-splitting/durations.json
