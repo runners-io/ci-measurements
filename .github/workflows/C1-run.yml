@@ -45,7 +45,7 @@ jobs:
           cargo --version
           echo "IMAGE=${ImageOS}-${ImageVersion}" >> "$GITHUB_ENV"
           echo "NPROC=$(nproc)" >> "$GITHUB_ENV"
-          echo "RUSTC=$(rustc --version)" >> "$GITHUB_ENV"
+          echo "RUSTC_VERSION=$(rustc --version)" >> "$GITHUB_ENV"
 
       - name: Fetch the source at the pinned commit
         run: |
@@ -164,7 +164,7 @@ jobs:
           fi
           mkdir -p out
           echo "arm,phase,rep,run_id,date_utc,image,nproc,rustc,fetch_s,restore_s,restore_hit,build_s,save_s,target_mb,target_files,cachedir_mb,cachedir_files,compile_requests,sccache_hits,sccache_misses,sccache_write_errors,sccache_read_errors" > out/row.csv
-          echo "$ARM,$PHASE,$REP,${{ github.run_id }},$(date -u +%FT%TZ),$IMAGE,$NPROC,\"$RUSTC\",$FETCH_S,$RESTORE_S,$CACHE_HIT,$BUILD_S,$SAVE_S,$TARGET_MB,$TARGET_FILES,$CACHEDIR_MB,$CACHEDIR_FILES,$REQS,$HITS,$MISSES,$WERR,$RERR" >> out/row.csv
+          echo "$ARM,$PHASE,$REP,${{ github.run_id }},$(date -u +%FT%TZ),$IMAGE,$NPROC,\"$RUSTC_VERSION\",$FETCH_S,$RESTORE_S,$CACHE_HIT,$BUILD_S,$SAVE_S,$TARGET_MB,$TARGET_FILES,$CACHEDIR_MB,$CACHEDIR_FILES,$REQS,$HITS,$MISSES,$WERR,$RERR" >> out/row.csv
           cat out/row.csv
           [ -f "sccache-stats-$ARM-$PHASE-$REP.json" ] && cp "sccache-stats-$ARM-$PHASE-$REP.json" out/ || true
 
