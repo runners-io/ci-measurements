@@ -1,0 +1,67 @@
+# C3: the ways to clear Actions caches, each run once against caches this workflow just made.
+# Every command is asserted by counting what `gh cache list` shows before and after.
+name: C3 clear caches
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+  P: c3clear-${{ github.run_id }}
+
+jobs:
+  clear:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Make five small entries
+        run: |
+          for n in a b c d e; do mkdir -p "d$n" && echo "$n" > "d$n/file"; done
+      - uses: actions/cache/save@v6
+        with: { path: da, key: "${{ env.P }}-a" }
+      - uses: actions/cache/save@v6
+        with: { path: db, key: "${{ env.P }}-b" }
+      - uses: actions/cache/save@v6
+        with: { path: dc, key: "${{ env.P }}-c" }
+      - uses: actions/cache/save@v6
+        with: { path: dd, key: "${{ env.P }}-d" }
+      - uses: actions/cache/save@v6
+        with: { path: de, key: "${{ env.P }}-e" }
+
+      - name: List by key prefix (gh cache list --key)
+        run: |
+          n=$(gh cache list --key "$P-" --limit 100 --json id -q 'length')
+          echo "entries with the prefix: $n"; [ "$n" = 5 ]
+          gh cache list --key "$P-" --json id,key,ref,sizeInBytes,createdAt,lastAccessedAt,version
+
+      - name: Delete one by key (gh cache delete KEY)
+        run: |
+          gh cache delete "$P-a"
+          [ "$(gh cache list --key "$P-" --limit 100 --json id -q 'length')" = 4 ]
+
+      - name: Delete one by ID (gh cache delete ID)
+        run: |
+          id=$(gh cache list --key "$P-b" --json id -q '.[0].id')
+          gh cache delete "$id"
+          [ "$(gh cache list --key "$P-" --limit 100 --json id -q 'length')" = 3 ]
+
+      - name: Delete one by key through the REST API
+        run: |
+          gh api -X DELETE "repos/$GH_REPO/actions/caches?key=$P-c"
+          [ "$(gh cache list --key "$P-" --limit 100 --json id -q 'length')" = 2 ]
+
+      - name: Delete one by ID through the REST API
+        run: |
+          id=$(gh cache list --key "$P-d" --json id -q '.[0].id')
+          gh api -X DELETE "repos/$GH_REPO/actions/caches/$id"
+          [ "$(gh cache list --key "$P-" --limit 100 --json id -q 'length')" = 1 ]
+
+      - name: Delete a list, one at a time (the loop the other workflows use)
+        run: |
+          gh cache list --key "$P-" --limit 1000 --json id -q '.[].id' | while read -r id; do gh cache delete "$id"; done
+          [ "$(gh cache list --key "$P-" --limit 100 --json id -q 'length')" = 0 ]
+          echo "all five entries gone, by five different commands"
