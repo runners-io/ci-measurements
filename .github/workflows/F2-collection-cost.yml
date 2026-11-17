@@ -1,0 +1,46 @@
+name: F2 · what collecting tests costs
+
+# The F2 split runs showed one shard always running long: the one holding
+# networkx/algorithms/isomorphism/tests/test_common.py, whose recorded test time is 4.6 s.
+# This times pytest's collection alone (no test runs), for that file and for the whole suite,
+# five times, on the same pinned networkx and image as the split study.
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+env:
+  NETWORKX_REF: 49ca2290b80c1389eb4d8d8e49dcba73f8fec016 # networkx-3.7
+
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2, 3, 4, 5]
+    name: collection cost rep ${{ matrix.rep }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: networkx/networkx
+          ref: ${{ env.NETWORKX_REF }}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --quiet -e '.[default,test]'
+      - name: time collection
+        run: |
+          t() { local s=$(date +%s.%N); "$@" > /dev/null 2>&1; local e=$(date +%s.%N); python3 -c "print(round($e-$s,2))"; }
+          whole=$(t pytest networkx -p no:cacheprovider --collect-only -q)
+          common=$(t pytest networkx/algorithms/isomorphism/tests/test_common.py -p no:cacheprovider --collect-only -q)
+          small=$(t pytest networkx/classes/tests/test_special.py -p no:cacheprovider --collect-only -q)
+          mkdir out
+          echo "date,rep,collect_whole_suite_s,collect_test_common_s,collect_test_special_s" > out/collection.csv
+          echo "$(date -u +%F),${{ matrix.rep }},$whole,$common,$small" >> out/collection.csv
+          cat out/collection.csv
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: collection-${{ matrix.rep }}
+          path: out
