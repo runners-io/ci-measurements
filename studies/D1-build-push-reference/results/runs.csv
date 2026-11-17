@@ -1,0 +1,9 @@
+workflow,run_id,date_utc,conclusion,note
+D1-cache-minimal,44065753311,2026-11-17T10:31:00Z,success,pushed image runs
+D1-cache-multiplatform,44065759541,2026-11-17T10:31:00Z,success,tag lists linux/amd64 and linux/arm64
+D1-cache-gha,44064816810,2026-11-17T10:26:14Z,success,second build took the RUN layer from the cache
+D1-cache-registry,44064822946,2026-11-17T10:26:17Z,success,second build took the RUN layer from the cache
+D1-cache-inline,44064828900,2026-11-17T10:26:19Z,success,second build took the RUN layer from the cache
+D1-cache-local,44064437354,2026-11-17T10:23:48Z,success,second build took the RUN layer from the cache
+D1-cache-s3,44065860506,2026-11-17T10:32:00Z,success,against Adobe S3Mock
+D1-cache-azblob,44065866852,2026-11-17T10:32:00Z,success,against Azurite
