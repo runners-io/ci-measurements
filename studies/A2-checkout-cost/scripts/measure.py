@@ -14,7 +14,7 @@ repo_dir, out = pathlib.Path(sys.argv[1]), sys.argv[2]
 E = os.environ
 
 
-def run(cmd, cwd=repo_dir, timeout=180):
+def run(cmd, cwd=repo_dir, timeout=60):
     t = time.perf_counter()
     try:
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
