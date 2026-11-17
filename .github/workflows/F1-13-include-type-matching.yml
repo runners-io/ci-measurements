@@ -1,0 +1,14 @@
+name: F1-13 does include match a number against a string
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        node: [22, 24]
+        include:
+          # "22" is a string; the axis holds the number 22.
+          - node: "22"
+            npm: "10"
+    steps:
+      - run: echo '${{ toJSON(matrix) }}'

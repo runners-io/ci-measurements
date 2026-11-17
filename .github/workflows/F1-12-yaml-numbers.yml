@@ -1,0 +1,17 @@
+name: F1-12 YAML numbers in a matrix
+on: workflow_dispatch
+jobs:
+  unquoted:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: [3.9, 3.10, 3.11]
+    steps:
+      - run: echo "python=${{ matrix.python }}"
+  quoted:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ["3.9", "3.10", "3.11"]
+    steps:
+      - run: echo "python=${{ matrix.python }}"
