@@ -90,7 +90,13 @@ jobs:
             sleep 5
           done
           exit 1
-      - name: Delete every Actions cache entry of this repository
+      - name: Delete the Actions cache entries this study wrote
+        # Only BuildKit's own keys (its index and blob entries) and this study's local-cache keys. The repository's cache
+        # is shared with other studies, so never `gh cache delete --all`.
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh cache delete --all --repo "$GITHUB_REPOSITORY" || true
+        run: |
+          gh cache list --repo "$GITHUB_REPOSITORY" --limit 1000 --json id,key \
+            --jq '.[] | select(.key | startswith("index-") or startswith("buildkit-blob-") or startswith("d2local-")) | .id' > ids.txt
+          wc -l < ids.txt
+          while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY" || true; done < ids.txt
