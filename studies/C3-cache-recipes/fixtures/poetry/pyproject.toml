@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "c3-poetry"
+version = "1.0.0"
+description = "cache recipe fixture"
+authors = ["ci-measurements <noreply@example.com>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4.0"
+requests = "^2.32"
+flask = "^3.0"
+numpy = "^2.0"
+pandas = "^2.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"

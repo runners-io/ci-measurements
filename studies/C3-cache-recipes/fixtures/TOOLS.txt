@@ -1,0 +1,13 @@
+node v22.23.4
+npm 10.9.9
+yarn 1.22.22
+pnpm 12.21.0
+python Python 3.12.16
+Poetry (version 2.5.1)
+gradle Welcome to Gradle 9.9.1!
+Apache Maven 3.10.0 (c43a36b8d67be7e0805a411bc0898af1a51f5472)
+cargo 1.99.1 (5f94df478 2026-08-27)
+go version go1.24.13 linux/amd64
+Bundler version 2.5.22
+dotnet 11.0.100
+Composer version 2.11.2 2026-11-10 10:09:37

@@ -1,0 +1,11 @@
+{
+  "name": "c3-npm",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "express": "^4.21.0", "lodash": "^4.17.21", "axios": "^1.7.0", "react": "^18.3.0", "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0", "eslint": "^9.0.0", "jest": "^29.7.0", "webpack": "^5.95.0", "prettier": "^3.3.0"
+  }
+}
