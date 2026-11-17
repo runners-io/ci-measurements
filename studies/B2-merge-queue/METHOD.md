@@ -20,8 +20,6 @@ Every configuration has its own set of base branches (`b2-mq-<config>-r<rep>`), 
 | `c1` | 1 | 1 / 1 | 5 queues of 8 pull requests (40) |
 | `c2` | 5 | 1 / 5 | 3 queues of 6 (18) |
 | `c4` | 5 | 1 / 5 | 3 queues of 6 (18); the third pull request carries the failing file |
-| `c5` | 5 | 1 / 5 | 3 queues of 3 (9); the pull-request run skips the job (`if: github.event_name == 'merge_group'`); only the merge group does the work |
-| `c0` | 5 | 1 / 5 | 3 queues of 1 (3); the workflow on that branch has no `merge_group` trigger; check timeout 5 minutes |
 
 ## How
 
@@ -44,3 +42,11 @@ We did not run the queue's "jump to the top" option.
 
 The study was cut to these sizes after the first version of the driver used too much of the account's shared API quota; a
 third configuration with a minimum group size of 5 (`c3`) was dropped and not run.
+
+## Not run
+
+Two further configurations were prepared (`rulesets/b2-c0.json`, `rulesets/b2-c5.json` and the branches `b2-mq-c0-*`,
+`b2-mq-c5-*`): `c0`, a workflow with no `merge_group` trigger, and `c5`, a pull-request run that skips the job so that only the
+merge group does the work. They were started at 12:30 UTC and stopped at once: from about 12:30 every job in this repository
+failed to start, with the annotation "The job was not started because your account is locked due to a billing issue". The
+post says it did not measure them. `run-all.sh` lists them as they were meant to run.
