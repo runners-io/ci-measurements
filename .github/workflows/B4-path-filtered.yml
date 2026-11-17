@@ -1,0 +1,21 @@
+# B4 (RUN-4125): a required check that a path filter skips. The branch b4-required requires a check named "build".
+# This workflow only runs when a pull request into it changes a file under studies/B4-queued-states/trigger/, so a pull
+# request that changes anything else never gets a "build" check at all. studies/B4-queued-states/observe-required.py
+# opens such a pull request and records what the pull request says about it.
+name: B4 path filtered
+
+on:
+  pull_request:
+    branches: [b4-required]
+    paths:
+      - "studies/B4-queued-states/trigger/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - run: echo "build ran"
