@@ -8,6 +8,9 @@ on:
       reps:
         description: "repetitions, as a JSON list"
         default: "[1,2,3,4,5]"
+      profiles:
+        description: "build profiles, as a JSON list of dev and release"
+        default: '["dev","release"]'
 
 permissions:
   contents: read
@@ -20,11 +23,13 @@ jobs:
       matrix:
         arm: [none, target-cache, sccache-gha, sccache-local]
         rep: ${{ fromJSON(inputs.reps) }}
+        profile: ${{ fromJSON(inputs.profiles) }}
     uses: ./.github/workflows/C1-run.yml
     with:
       arm: ${{ matrix.arm }}
       phase: cold
       rep: ${{ matrix.rep }}
+      profile: ${{ matrix.profile }}
 
   warm:
     needs: cold
@@ -35,11 +40,13 @@ jobs:
       matrix:
         arm: [target-cache, sccache-gha, sccache-local]
         rep: ${{ fromJSON(inputs.reps) }}
+        profile: ${{ fromJSON(inputs.profiles) }}
     uses: ./.github/workflows/C1-run.yml
     with:
       arm: ${{ matrix.arm }}
       phase: warm
       rep: ${{ matrix.rep }}
+      profile: ${{ matrix.profile }}
 
   cleanup:
     needs: warm

@@ -20,6 +20,12 @@ jobs:
   npm-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -28,6 +34,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/npm/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name package-lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -41,7 +51,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -49,6 +59,19 @@ jobs:
       - name: Install
         run: npm ci
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name package-lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.npm"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -57,18 +80,19 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.npm
-          key: ${{ env.PFX }}-${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "npm,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "npm,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -79,6 +103,12 @@ jobs:
     needs: npm-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -87,6 +117,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/npm/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name package-lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -100,7 +134,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -108,6 +142,19 @@ jobs:
       - name: Install
         run: npm ci
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name package-lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.npm"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -118,8 +165,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "npm,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "npm,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -130,6 +178,12 @@ jobs:
     needs: npm-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -138,8 +192,14 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/npm/. .
           rm -rf _repo
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> package-lock.json
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-npm-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name package-lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -153,7 +213,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -161,6 +221,19 @@ jobs:
       - name: Install
         run: npm ci
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name package-lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.npm"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -171,8 +244,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "npm,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "npm,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -182,6 +256,12 @@ jobs:
   pnpm-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -191,6 +271,10 @@ jobs:
           cp -a _repo/studies/C3-cache-recipes/fixtures/pnpm/. .
           rm -rf _repo
       - run: npm install -g pnpm
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name pnpm-lock.yaml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -204,7 +288,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -212,6 +296,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name pnpm-lock.yaml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.local/share/pnpm/store"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -220,18 +317,19 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.local/share/pnpm/store
-          key: ${{ env.PFX }}-${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "pnpm,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "pnpm,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -242,6 +340,12 @@ jobs:
     needs: pnpm-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -251,6 +355,10 @@ jobs:
           cp -a _repo/studies/C3-cache-recipes/fixtures/pnpm/. .
           rm -rf _repo
       - run: npm install -g pnpm
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name pnpm-lock.yaml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -264,7 +372,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -272,6 +380,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name pnpm-lock.yaml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.local/share/pnpm/store"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -282,8 +403,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "pnpm,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "pnpm,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -294,6 +416,12 @@ jobs:
     needs: pnpm-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -303,8 +431,14 @@ jobs:
           cp -a _repo/studies/C3-cache-recipes/fixtures/pnpm/. .
           rm -rf _repo
       - run: npm install -g pnpm
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> pnpm-lock.yaml
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-pnpm-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name pnpm-lock.yaml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -318,7 +452,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -326,6 +460,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name pnpm-lock.yaml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.local/share/pnpm/store"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -336,8 +483,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "pnpm,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "pnpm,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -347,6 +495,12 @@ jobs:
   yarn-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -355,6 +509,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/yarn/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name yarn.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -368,7 +526,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -376,6 +534,19 @@ jobs:
       - name: Install
         run: yarn install --frozen-lockfile
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name yarn.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/yarn"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -384,18 +555,19 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.cache/yarn
-          key: ${{ env.PFX }}-${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "yarn,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "yarn,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -406,6 +578,12 @@ jobs:
     needs: yarn-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -414,6 +592,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/yarn/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name yarn.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -427,7 +609,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -435,6 +617,19 @@ jobs:
       - name: Install
         run: yarn install --frozen-lockfile
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name yarn.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/yarn"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -445,8 +640,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "yarn,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "yarn,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -457,6 +653,12 @@ jobs:
     needs: yarn-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -465,8 +667,14 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/yarn/. .
           rm -rf _repo
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> yarn.lock
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-yarn-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name yarn.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -480,7 +688,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -488,6 +696,19 @@ jobs:
       - name: Install
         run: yarn install --frozen-lockfile
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name yarn.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/yarn"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -498,8 +719,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "yarn,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "yarn,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -509,6 +731,12 @@ jobs:
   pip-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -520,6 +748,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name requirements.txt | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -533,7 +765,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -541,6 +773,19 @@ jobs:
       - name: Install
         run: pip install -r requirements.txt
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name requirements.txt | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/pip"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -549,18 +794,19 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.cache/pip
-          key: ${{ env.PFX }}-${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "pip,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "pip,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -571,6 +817,12 @@ jobs:
     needs: pip-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -582,6 +834,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name requirements.txt | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -595,7 +851,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -603,6 +859,19 @@ jobs:
       - name: Install
         run: pip install -r requirements.txt
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name requirements.txt | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/pip"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -613,8 +882,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "pip,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "pip,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -625,6 +895,12 @@ jobs:
     needs: pip-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -636,8 +912,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> requirements.txt
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-pip-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name requirements.txt | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -651,7 +933,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -659,6 +941,19 @@ jobs:
       - name: Install
         run: pip install -r requirements.txt
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name requirements.txt | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/pip"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -669,8 +964,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "pip,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "pip,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -680,6 +976,12 @@ jobs:
   poetry-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -692,6 +994,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pipx install poetry
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name poetry.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -706,7 +1012,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -714,6 +1020,19 @@ jobs:
       - name: Install
         run: poetry install --no-root
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name poetry.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/pypoetry" "$HOME/.cache/pip"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -722,19 +1041,20 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.cache/pypoetry
             ~/.cache/pip
-          key: ${{ env.PFX }}-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "poetry,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "poetry,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -745,6 +1065,12 @@ jobs:
     needs: poetry-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -757,6 +1083,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pipx install poetry
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name poetry.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -771,7 +1101,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -779,6 +1109,19 @@ jobs:
       - name: Install
         run: poetry install --no-root
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name poetry.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/pypoetry" "$HOME/.cache/pip"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -789,8 +1132,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "poetry,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "poetry,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -801,6 +1145,12 @@ jobs:
     needs: poetry-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -813,8 +1163,14 @@ jobs:
         with:
           python-version: "3.12"
       - run: pipx install poetry
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> poetry.lock
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-poetry-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name poetry.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -829,7 +1185,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -837,6 +1193,19 @@ jobs:
       - name: Install
         run: poetry install --no-root
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name poetry.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/pypoetry" "$HOME/.cache/pip"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -847,8 +1216,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "poetry,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "poetry,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -858,6 +1228,12 @@ jobs:
   gradle-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -866,6 +1242,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/gradle/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f \( -name '*.gradle*' -o -name gradle-wrapper.properties \) | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -880,7 +1260,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -888,6 +1268,19 @@ jobs:
       - name: Install
         run: chmod +x gradlew && ./gradlew --no-daemon build -x test
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f \( -name '*.gradle*' -o -name gradle-wrapper.properties \) | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.gradle/caches" "$HOME/.gradle/wrapper"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -896,19 +1289,20 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ env.PFX }}-${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "gradle,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "gradle,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -919,6 +1313,12 @@ jobs:
     needs: gradle-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -927,6 +1327,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/gradle/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f \( -name '*.gradle*' -o -name gradle-wrapper.properties \) | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -941,7 +1345,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -949,6 +1353,19 @@ jobs:
       - name: Install
         run: chmod +x gradlew && ./gradlew --no-daemon build -x test
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f \( -name '*.gradle*' -o -name gradle-wrapper.properties \) | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.gradle/caches" "$HOME/.gradle/wrapper"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -959,8 +1376,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "gradle,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "gradle,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -971,6 +1389,12 @@ jobs:
     needs: gradle-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -979,8 +1403,14 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/gradle/. .
           rm -rf _repo
-      - name: Change the build file by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> build.gradle
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-gradle-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f \( -name '*.gradle*' -o -name gradle-wrapper.properties \) | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -995,7 +1425,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -1003,6 +1433,19 @@ jobs:
       - name: Install
         run: chmod +x gradlew && ./gradlew --no-daemon build -x test
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f \( -name '*.gradle*' -o -name gradle-wrapper.properties \) | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.gradle/caches" "$HOME/.gradle/wrapper"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1013,8 +1456,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "gradle,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "gradle,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1024,6 +1468,12 @@ jobs:
   maven-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1032,6 +1482,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/maven/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name pom.xml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1045,7 +1499,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -1053,6 +1507,19 @@ jobs:
       - name: Install
         run: mvn -B -ntp -q package -DskipTests
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name pom.xml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.m2/repository"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1061,18 +1528,19 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.m2/repository
-          key: ${{ env.PFX }}-${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "maven,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "maven,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1083,6 +1551,12 @@ jobs:
     needs: maven-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1091,6 +1565,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/maven/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name pom.xml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1104,7 +1582,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -1112,6 +1590,19 @@ jobs:
       - name: Install
         run: mvn -B -ntp -q package -DskipTests
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name pom.xml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.m2/repository"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1122,8 +1613,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "maven,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "maven,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1134,6 +1626,12 @@ jobs:
     needs: maven-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1142,8 +1640,14 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/maven/. .
           rm -rf _repo
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> pom.xml
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-maven-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name pom.xml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1157,7 +1661,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -1165,6 +1669,19 @@ jobs:
       - name: Install
         run: mvn -B -ntp -q package -DskipTests
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name pom.xml | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.m2/repository"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1175,8 +1692,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "maven,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "maven,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1186,6 +1704,12 @@ jobs:
   cargo-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1194,6 +1718,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/cargo/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name Cargo.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1210,7 +1738,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -1218,6 +1746,19 @@ jobs:
       - name: Install
         run: cargo build --locked
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name Cargo.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cargo/registry" "$HOME/.cargo/git" "target"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1226,7 +1767,7 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
@@ -1234,13 +1775,14 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ env.PFX }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "cargo,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "cargo,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1251,6 +1793,12 @@ jobs:
     needs: cargo-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1259,6 +1807,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/cargo/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name Cargo.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1275,7 +1827,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -1283,6 +1835,19 @@ jobs:
       - name: Install
         run: cargo build --locked
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name Cargo.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cargo/registry" "$HOME/.cargo/git" "target"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1293,8 +1858,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "cargo,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "cargo,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1305,6 +1871,12 @@ jobs:
     needs: cargo-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1313,8 +1885,14 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/cargo/. .
           rm -rf _repo
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> Cargo.lock
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-cargo-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name Cargo.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1331,7 +1909,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -1339,6 +1917,19 @@ jobs:
       - name: Install
         run: cargo build --locked
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name Cargo.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cargo/registry" "$HOME/.cargo/git" "target"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1349,8 +1940,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "cargo,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "cargo,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1360,6 +1952,12 @@ jobs:
   go-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1368,6 +1966,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/go/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name go.sum | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1382,7 +1984,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -1390,6 +1992,19 @@ jobs:
       - name: Install
         run: go build ./...
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name go.sum | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/go/pkg/mod" "$HOME/.cache/go-build"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1398,19 +2013,20 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ env.PFX }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "go,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "go,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1421,6 +2037,12 @@ jobs:
     needs: go-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1429,6 +2051,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/go/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name go.sum | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1443,7 +2069,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -1451,6 +2077,19 @@ jobs:
       - name: Install
         run: go build ./...
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name go.sum | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/go/pkg/mod" "$HOME/.cache/go-build"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1461,8 +2100,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "go,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "go,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1473,6 +2113,12 @@ jobs:
     needs: go-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1481,8 +2127,14 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/go/. .
           rm -rf _repo
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> go.sum
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-go-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name go.sum | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1497,7 +2149,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -1505,6 +2157,19 @@ jobs:
       - name: Install
         run: go build ./...
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name go.sum | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/go/pkg/mod" "$HOME/.cache/go-build"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1515,8 +2180,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "go,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "go,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1526,6 +2192,12 @@ jobs:
   bundler-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1537,6 +2209,10 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name Gemfile.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1550,7 +2226,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -1559,6 +2235,19 @@ jobs:
       - name: Install
         run: bundle install
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name Gemfile.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-bundler-${{ hashFiles('**/Gemfile.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "vendor/bundle"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1567,18 +2256,19 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             vendor/bundle
-          key: ${{ env.PFX }}-${{ runner.os }}-bundler-${{ hashFiles('**/Gemfile.lock') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "bundler,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "bundler,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1589,6 +2279,12 @@ jobs:
     needs: bundler-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1600,6 +2296,10 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name Gemfile.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1613,7 +2313,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -1622,6 +2322,19 @@ jobs:
       - name: Install
         run: bundle install
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name Gemfile.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-bundler-${{ hashFiles('**/Gemfile.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "vendor/bundle"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1632,8 +2345,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "bundler,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "bundler,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1644,6 +2358,12 @@ jobs:
     needs: bundler-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1655,8 +2375,14 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> Gemfile.lock
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-bundler-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name Gemfile.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1670,7 +2396,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -1679,6 +2405,19 @@ jobs:
       - name: Install
         run: bundle install
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name Gemfile.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-bundler-${{ hashFiles('**/Gemfile.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "vendor/bundle"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1689,8 +2428,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "bundler,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "bundler,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1700,6 +2440,12 @@ jobs:
   nuget-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1708,6 +2454,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/nuget/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name packages.lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1721,7 +2471,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -1729,6 +2479,19 @@ jobs:
       - name: Install
         run: dotnet restore --locked-mode
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name packages.lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.nuget/packages"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1737,18 +2500,19 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.nuget/packages
-          key: ${{ env.PFX }}-${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "nuget,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "nuget,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1759,6 +2523,12 @@ jobs:
     needs: nuget-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1767,6 +2537,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/nuget/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name packages.lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1780,7 +2554,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -1788,6 +2562,19 @@ jobs:
       - name: Install
         run: dotnet restore --locked-mode
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name packages.lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.nuget/packages"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1798,8 +2585,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "nuget,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "nuget,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1810,6 +2598,12 @@ jobs:
     needs: nuget-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1818,8 +2612,14 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/nuget/. .
           rm -rf _repo
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> packages.lock.json
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-nuget-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name packages.lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1833,7 +2633,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -1841,6 +2641,19 @@ jobs:
       - name: Install
         run: dotnet restore --locked-mode
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name packages.lock.json | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.nuget/packages"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1851,8 +2664,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "nuget,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "nuget,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1862,6 +2676,12 @@ jobs:
   composer-cold:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1870,6 +2690,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/composer/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name composer.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1883,7 +2707,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -z "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a miss'; exit 1; }
@@ -1891,6 +2715,19 @@ jobs:
       - name: Install
         run: composer install --no-interaction --no-progress
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name composer.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/composer/files"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1899,18 +2736,19 @@ jobs:
           echo "CACHE_MB=$(cat mb.txt)" >> "$GITHUB_ENV"; echo "CACHE_FILES=$(tr -d ' ' < files.txt)" >> "$GITHUB_ENV"
           [ "$(cat mb.txt)" -gt 0 ] || { echo 'the cached paths are empty: the recipe points at the wrong directory'; exit 1; }
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
-      - name: Save
+      - name: Save, under the key the restore step looked for
         uses: actions/cache/save@v6
         with:
           path: |
             ~/.cache/composer/files
-          key: ${{ env.PFX }}-${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
       - run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "composer,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "composer,cold,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1921,6 +2759,12 @@ jobs:
     needs: composer-cold
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1929,6 +2773,10 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/composer/. .
           rm -rf _repo
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name composer.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1942,7 +2790,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" = 'true' ] || { echo 'expected an exact hit'; exit 1; }
@@ -1950,6 +2798,19 @@ jobs:
       - name: Install
         run: composer install --no-interaction --no-progress
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name composer.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/composer/files"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -1960,8 +2821,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "composer,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "composer,warm,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
@@ -1972,6 +2834,12 @@ jobs:
     needs: composer-warm
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1980,8 +2848,14 @@ jobs:
         run: |
           cp -a _repo/studies/C3-cache-recipes/fixtures/composer/. .
           rm -rf _repo
-      - name: Change the lockfile by one byte, as a dependency update would
+      - name: Change the key's input by one byte, as a dependency update would
         run: echo >> composer.lock
+      - name: List the entries that exist for this ecosystem now
+        run: gh cache list --key "${PFX}-Linux-composer-" --json key,version,sizeInBytes,createdAt,ref
+      - name: Snapshot the key's input files (before)
+        run: |
+          find . -type f -name composer.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-before.txt"
+          cat "$RUNNER_TEMP/keyfiles-before.txt"
       - run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
       - name: Restore
         id: restore
@@ -1995,7 +2869,7 @@ jobs:
       - name: Time the restore and check what it did
         run: |
           echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
-          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'"
+          echo "hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'"
           echo "HIT=${{ steps.restore.outputs.cache-hit }}" >> "$GITHUB_ENV"
           echo "MATCHED=${{ steps.restore.outputs.cache-matched-key }}" >> "$GITHUB_ENV"
           [ "${{ steps.restore.outputs.cache-hit }}" != 'true' ] && [ -n "${{ steps.restore.outputs.cache-matched-key }}" ] || { echo 'expected a restore-keys match'; exit 1; }
@@ -2003,6 +2877,19 @@ jobs:
       - name: Install
         run: composer install --no-interaction --no-progress
       - run: echo "INSTALL_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Snapshot the key's input files (after)
+        run: |
+          find . -type f -name composer.lock | sort | xargs sha256sum > "$RUNNER_TEMP/keyfiles-after.txt"
+          cat "$RUNNER_TEMP/keyfiles-after.txt"
+      - name: Did the install change a file the key is made from?
+        run: |
+          if diff "$RUNNER_TEMP/keyfiles-before.txt" "$RUNNER_TEMP/keyfiles-after.txt" > "$RUNNER_TEMP/keydrift.txt"; then
+            echo 'KEY_DRIFT=no' >> "$GITHUB_ENV"
+          else
+            echo 'KEY_DRIFT=yes' >> "$GITHUB_ENV"; cat "$RUNNER_TEMP/keydrift.txt"
+          fi
+          echo "hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}"
+          echo "hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}"
       - name: Measure what is cached
         run: |
           for p in "$HOME/.cache/composer/files"; do [ -e "$p" ] && du -sm "$p"; done | awk '{s+=$1} END{print s+0}' > mb.txt
@@ -2013,8 +2900,9 @@ jobs:
       - name: Write the row
         run: |
           mkdir -p out
-          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv
-          echo "composer,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES" >> out/row.csv
+          cp "$RUNNER_TEMP/keydrift.txt" out/keydrift.txt 2>/dev/null || true
+          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv
+          echo "composer,edit,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${SAVE_S:-},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT" >> out/row.csv
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:

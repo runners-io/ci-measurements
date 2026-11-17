@@ -17,68 +17,68 @@ ECOS = [
     dict(
         name="npm", lock="package-lock.json", glob="'**/package-lock.json'",
         paths=["~/.npm"], measure=["$HOME/.npm"],
-        install="npm ci",
+        install="npm ci", find="-name package-lock.json",
     ),
     dict(
         name="pnpm", lock="pnpm-lock.yaml", glob="'**/pnpm-lock.yaml'",
         paths=["~/.local/share/pnpm/store"], measure=["$HOME/.local/share/pnpm/store"],
         setup=["run: npm install -g pnpm"],
-        install="pnpm install --frozen-lockfile",
+        install="pnpm install --frozen-lockfile", find="-name pnpm-lock.yaml",
     ),
     dict(
         name="yarn", lock="yarn.lock", glob="'**/yarn.lock'",
         paths=["~/.cache/yarn"], measure=["$HOME/.cache/yarn"],
-        install="yarn install --frozen-lockfile",
+        install="yarn install --frozen-lockfile", find="-name yarn.lock",
     ),
     dict(
         name="pip", lock="requirements.txt", glob="'**/requirements.txt'",
         paths=["~/.cache/pip"], measure=["$HOME/.cache/pip"],
         setup=["uses: actions/setup-python@v7\n        with:\n          python-version: \"3.12\""],
-        install="pip install -r requirements.txt",
+        install="pip install -r requirements.txt", find="-name requirements.txt",
     ),
     dict(
         name="poetry", lock="poetry.lock", glob="'**/poetry.lock'",
         paths=["~/.cache/pypoetry", "~/.cache/pip"], measure=["$HOME/.cache/pypoetry", "$HOME/.cache/pip"],
         setup=["uses: actions/setup-python@v7\n        with:\n          python-version: \"3.12\"", "run: pipx install poetry"],
-        install="poetry install --no-root",
+        install="poetry install --no-root", find="-name poetry.lock",
     ),
     dict(
         name="gradle", lock="build.gradle", glob="'**/*.gradle*', '**/gradle-wrapper.properties'",
         paths=["~/.gradle/caches", "~/.gradle/wrapper"], measure=["$HOME/.gradle/caches", "$HOME/.gradle/wrapper"],
-        install="chmod +x gradlew && ./gradlew --no-daemon build -x test",
+        install="chmod +x gradlew && ./gradlew --no-daemon build -x test", find="\\( -name '*.gradle*' -o -name gradle-wrapper.properties \\)",
     ),
     dict(
         name="maven", lock="pom.xml", glob="'**/pom.xml'",
         paths=["~/.m2/repository"], measure=["$HOME/.m2/repository"],
-        install="mvn -B -ntp -q package -DskipTests",
+        install="mvn -B -ntp -q package -DskipTests", find="-name pom.xml",
     ),
     dict(
         name="cargo", lock="Cargo.lock", glob="'**/Cargo.lock'",
         paths=["~/.cargo/registry/index/", "~/.cargo/registry/cache/", "~/.cargo/git/db/", "target/"],
         measure=["$HOME/.cargo/registry", "$HOME/.cargo/git", "target"],
-        install="cargo build --locked",
+        install="cargo build --locked", find="-name Cargo.lock",
     ),
     dict(
         name="go", lock="go.sum", glob="'**/go.sum'",
         paths=["~/go/pkg/mod", "~/.cache/go-build"], measure=["$HOME/go/pkg/mod", "$HOME/.cache/go-build"],
-        install="go build ./...",
+        install="go build ./...", find="-name go.sum",
     ),
     dict(
         name="bundler", lock="Gemfile.lock", glob="'**/Gemfile.lock'",
         paths=["vendor/bundle"], measure=["vendor/bundle"],
         setup=["uses: ruby/setup-ruby@v1\n        with:\n          ruby-version: \"3.3\""],
         pre="bundle config set --local path vendor/bundle",
-        install="bundle install",
+        install="bundle install", find="-name Gemfile.lock",
     ),
     dict(
         name="nuget", lock="packages.lock.json", glob="'**/packages.lock.json'",
         paths=["~/.nuget/packages"], measure=["$HOME/.nuget/packages"],
-        install="dotnet restore --locked-mode",
+        install="dotnet restore --locked-mode", find="-name packages.lock.json",
     ),
     dict(
         name="composer", lock="composer.lock", glob="'**/composer.lock'",
         paths=["~/.cache/composer/files"], measure=["$HOME/.cache/composer/files"],
-        install="composer install --no-interaction --no-progress",
+        install="composer install --no-interaction --no-progress", find="-name composer.lock",
     ),
 ]
 
@@ -136,8 +136,17 @@ def cache_inputs(e, restore_only):
 T_START = "      - run: echo \"T_A=$(date +%s.%N)\" >> \"$GITHUB_ENV\""
 
 
-def secs(var):
-    return f"awk -v a=\"$T_A\" -v b=\"$(date +%s.%N)\" 'BEGIN{{printf \"%.2f\", b-a}}'"
+def secs():
+    return "awk -v a=\"$T_A\" -v b=\"$(date +%s.%N)\" 'BEGIN{printf \"%.2f\", b-a}'"
+
+
+def snap(e, label):
+    # sha256 of every file the key's hashFiles pattern would read (hashFiles does not skip node_modules or vendor, so neither does this), so a rewrite by the install shows up as a diff
+    return (
+        f"      - name: Snapshot the key's input files ({label})\n        run: |\n"
+        f"          find . -type f {e['find']} | sort | xargs sha256sum > \"$RUNNER_TEMP/keyfiles-{label}.txt\"\n"
+        f"          cat \"$RUNNER_TEMP/keyfiles-{label}.txt\""
+    )
 
 
 def job(e, phase, needs):
@@ -147,35 +156,52 @@ def job(e, phase, needs):
         lines.append(f"    needs: {needs}")
     lines.append("    runs-on: ubuntu-24.04")
     lines.append("    timeout-minutes: 30")
+    lines.append("    env:\n      GH_TOKEN: ${{ github.token }}\n      GH_REPO: ${{ github.repository }}")
+    lines.append("    permissions:\n      contents: read\n      actions: read")
     lines.append("    steps:")
     lines += steps_common(e, phase)
     if phase == "edit":
         lines.append(
-            f"      - name: Change the lockfile by one byte, as a dependency update would\n        run: echo >> {e['lock']}"
-            if e["name"] not in ("gradle",)
-            else "      - name: Change the build file by one byte, as a dependency update would\n        run: echo >> build.gradle"
+            "      - name: Change the key's input by one byte, as a dependency update would\n        run: echo >> "
+            + ("build.gradle" if name == "gradle" else e["lock"])
         )
+        lines.append(
+            "      - name: List the entries that exist for this ecosystem now\n        run: gh cache list --key \"${PFX}-Linux-" + name + "-\" --json key,version,sizeInBytes,createdAt,ref"
+        )
+    lines.append(snap(e, "before"))
     lines.append(T_START)
     lines.append(
         "      - name: Restore\n        id: restore\n        uses: actions/cache/restore@v6\n" + cache_inputs(e, True)
     )
+    expect = {
+        "cold": "[ \"${{ steps.restore.outputs.cache-hit }}\" != 'true' ] && [ -z \"${{ steps.restore.outputs.cache-matched-key }}\" ] || { echo 'expected a miss'; exit 1; }",
+        "warm": "[ \"${{ steps.restore.outputs.cache-hit }}\" = 'true' ] || { echo 'expected an exact hit'; exit 1; }",
+        "edit": "[ \"${{ steps.restore.outputs.cache-hit }}\" != 'true' ] && [ -n \"${{ steps.restore.outputs.cache-matched-key }}\" ] || { echo 'expected a restore-keys match'; exit 1; }",
+    }[phase]
     lines.append(
         "      - name: Time the restore and check what it did\n        run: |\n"
-        f"          echo \"RESTORE_S=$({secs('x')})\" >> \"$GITHUB_ENV\"\n"
-        "          echo \"hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}'\"\n"
+        f"          echo \"RESTORE_S=$({secs()})\" >> \"$GITHUB_ENV\"\n"
+        "          echo \"hit='${{ steps.restore.outputs.cache-hit }}' matched='${{ steps.restore.outputs.cache-matched-key }}' primary='${{ steps.restore.outputs.cache-primary-key }}'\"\n"
         "          echo \"HIT=${{ steps.restore.outputs.cache-hit }}\" >> \"$GITHUB_ENV\"\n"
         "          echo \"MATCHED=${{ steps.restore.outputs.cache-matched-key }}\" >> \"$GITHUB_ENV\"\n"
-        + {
-            "cold": "          [ \"${{ steps.restore.outputs.cache-hit }}\" != 'true' ] && [ -z \"${{ steps.restore.outputs.cache-matched-key }}\" ] || { echo 'expected a miss'; exit 1; }\n",
-            "warm": "          [ \"${{ steps.restore.outputs.cache-hit }}\" = 'true' ] || { echo 'expected an exact hit'; exit 1; }\n",
-            "edit": "          [ \"${{ steps.restore.outputs.cache-hit }}\" != 'true' ] && [ -n \"${{ steps.restore.outputs.cache-matched-key }}\" ] || { echo 'expected a restore-keys match'; exit 1; }\n",
-        }[phase].rstrip("\n")
+        f"          {expect}"
     )
     if e.get("pre"):
         lines.append(f"      - run: {e['pre']}")
     lines.append(T_START)
     lines.append(f"      - name: Install\n        run: {e['install']}")
-    lines.append(f"      - run: echo \"INSTALL_S=$({secs('x')})\" >> \"$GITHUB_ENV\"")
+    lines.append(f"      - run: echo \"INSTALL_S=$({secs()})\" >> \"$GITHUB_ENV\"")
+    lines.append(snap(e, "after"))
+    lines.append(
+        "      - name: Did the install change a file the key is made from?\n        run: |\n"
+        "          if diff \"$RUNNER_TEMP/keyfiles-before.txt\" \"$RUNNER_TEMP/keyfiles-after.txt\" > \"$RUNNER_TEMP/keydrift.txt\"; then\n"
+        "            echo 'KEY_DRIFT=no' >> \"$GITHUB_ENV\"\n"
+        "          else\n"
+        "            echo 'KEY_DRIFT=yes' >> \"$GITHUB_ENV\"; cat \"$RUNNER_TEMP/keydrift.txt\"\n"
+        "          fi\n"
+        "          echo \"hashFiles before the install: ${{ steps.restore.outputs.cache-primary-key }}\"\n"
+        "          echo \"hashFiles after the install:  ${{ env.PFX }}-${{ runner.os }}-" + name + "-${{ hashFiles(" + e["glob"] + ") }}\""
+    )
     meas = " ".join(f"\"{m}\"" for m in e["measure"])
     lines.append(
         "      - name: Measure what is cached\n        run: |\n"
@@ -187,15 +213,18 @@ def job(e, phase, needs):
     )
     if phase == "cold":
         lines.append(T_START)
+        paths = "\n".join(f"            {p}" for p in e["paths"])
         lines.append(
-            "      - name: Save\n        uses: actions/cache/save@v6\n" + cache_inputs(e, False).replace("          restore-keys: |\n            " + f"${{{{ env.PFX }}}}-${{{{ runner.os }}}}-{name}-", "").rstrip()
+            "      - name: Save, under the key the restore step looked for\n        uses: actions/cache/save@v6\n"
+            "        with:\n          path: |\n" + paths + "\n          key: ${{ steps.restore.outputs.cache-primary-key }}"
         )
-        lines.append(f"      - run: echo \"SAVE_S=$({secs('x')})\" >> \"$GITHUB_ENV\"")
+        lines.append(f"      - run: echo \"SAVE_S=$({secs()})\" >> \"$GITHUB_ENV\"")
     lines.append(
         "      - name: Write the row\n        run: |\n"
         "          mkdir -p out\n"
-        "          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files' > out/row.csv\n"
-        f"          echo \"{name},{phase},${{{{ github.run_id }}}},$(date -u +%FT%TZ),${{ImageOS}}-${{ImageVersion}},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${{SAVE_S:-}},$CACHE_MB,$CACHE_FILES\" >> out/row.csv\n"
+        "          cp \"$RUNNER_TEMP/keydrift.txt\" out/keydrift.txt 2>/dev/null || true\n"
+        "          echo 'ecosystem,phase,run_id,date_utc,image,restore_s,restore_hit,matched_key,install_s,save_s,cache_mb,cache_files,key_drift_during_install' > out/row.csv\n"
+        f"          echo \"{name},{phase},${{{{ github.run_id }}}},$(date -u +%FT%TZ),${{ImageOS}}-${{ImageVersion}},$RESTORE_S,$HIT,$MATCHED,$INSTALL_S,${{SAVE_S:-}},$CACHE_MB,$CACHE_FILES,$KEY_DRIFT\" >> out/row.csv\n"
         "          cat out/row.csv"
     )
     lines.append(

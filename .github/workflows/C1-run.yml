@@ -16,6 +16,10 @@ on:
         description: "repetition number; also part of every cache key, so repetitions never share a cache"
         type: string
         required: true
+      profile:
+        description: "dev (cargo build) or release (cargo build --release)"
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -28,7 +32,8 @@ jobs:
       ARM: ${{ inputs.arm }}
       PHASE: ${{ inputs.phase }}
       REP: ${{ inputs.rep }}
-      KEYBASE: c1-${{ github.run_id }}-${{ inputs.rep }}
+      PROFILE: ${{ inputs.profile }}
+      KEYBASE: c1-${{ github.run_id }}-${{ inputs.profile }}-${{ inputs.rep }}
       # The workspace under test: helix 25.07.1, pinned by commit. Public, MPL-2.0, 14 workspace members, 321 locked packages.
       HELIX_SHA: ac94841019910ff405f31a8668389a06a169e0e5
       CARGO_INCREMENTAL: "0"
@@ -113,7 +118,7 @@ jobs:
         run: |
           if [ -n "$RUSTC_WRAPPER" ]; then sccache --zero-stats >/dev/null; fi
           a=$(date +%s.%N)
-          cargo build --workspace --locked
+          if [ "$PROFILE" = release ]; then cargo build --workspace --release --locked; else cargo build --workspace --locked; fi
           b=$(date +%s.%N)
           echo "BUILD_S=$(awk -v a="$a" -v b="$b" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
           if [ -n "$RUSTC_WRAPPER" ]; then
@@ -162,16 +167,16 @@ jobs:
             MISSES=$(jq '[.stats.cache_misses.counts // {} | to_entries[].value] | add // 0' "$J")
             WERR=$(jq '.stats.cache_write_errors // 0' "$J")
             RERR=$(jq '.stats.cache_read_errors // 0' "$J")
-            cp "$J" "sccache-stats-$ARM-$PHASE-$REP.json"
+            cp "$J" "sccache-stats-$PROFILE-$ARM-$PHASE-$REP.json"
           fi
           mkdir -p out
-          echo "arm,phase,rep,run_id,date_utc,image,nproc,rustc,fetch_s,restore_s,restore_hit,build_s,save_s,target_mb,target_files,cachedir_mb,cachedir_files,compile_requests,sccache_hits,sccache_misses,sccache_write_errors,sccache_read_errors" > out/row.csv
-          echo "$ARM,$PHASE,$REP,${{ github.run_id }},$(date -u +%FT%TZ),$IMAGE,$NPROC,\"$RUSTC_VERSION\",$FETCH_S,$RESTORE_S,$CACHE_HIT,$BUILD_S,$SAVE_S,$TARGET_MB,$TARGET_FILES,$CACHEDIR_MB,$CACHEDIR_FILES,$REQS,$HITS,$MISSES,$WERR,$RERR" >> out/row.csv
+          echo "profile,arm,phase,rep,run_id,date_utc,image,nproc,rustc,fetch_s,restore_s,restore_hit,build_s,save_s,target_mb,target_files,cachedir_mb,cachedir_files,compile_requests,sccache_hits,sccache_misses,sccache_write_errors,sccache_read_errors" > out/row.csv
+          echo "$PROFILE,$ARM,$PHASE,$REP,${{ github.run_id }},$(date -u +%FT%TZ),$IMAGE,$NPROC,\"$RUSTC_VERSION\",$FETCH_S,$RESTORE_S,$CACHE_HIT,$BUILD_S,$SAVE_S,$TARGET_MB,$TARGET_FILES,$CACHEDIR_MB,$CACHEDIR_FILES,$REQS,$HITS,$MISSES,$WERR,$RERR" >> out/row.csv
           cat out/row.csv
-          [ -f "sccache-stats-$ARM-$PHASE-$REP.json" ] && cp "sccache-stats-$ARM-$PHASE-$REP.json" out/ || true
+          [ -f "sccache-stats-$PROFILE-$ARM-$PHASE-$REP.json" ] && cp "sccache-stats-$PROFILE-$ARM-$PHASE-$REP.json" out/ || true
 
       - uses: actions/upload-artifact@v7
         with:
-          name: c1-${{ inputs.arm }}-${{ inputs.phase }}-${{ inputs.rep }}
+          name: c1-${{ inputs.profile }}-${{ inputs.arm }}-${{ inputs.phase }}-${{ inputs.rep }}
           path: out/
           retention-days: 30
