@@ -1,0 +1,26 @@
+# C3: builds the twelve fixture projects and their lockfiles once, and uploads them for committing.
+name: C3 fixtures
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: bash studies/C3-cache-recipes/make-fixtures.sh fixtures
+      - run: |
+          { echo "node $(node --version)"; echo "npm $(npm --version)"; echo "yarn $(yarn --version)"; echo "pnpm $(pnpm --version)"
+            echo "python $(python --version)"; poetry --version; echo "gradle $(gradle --version | grep -m1 Gradle)"; mvn -v | head -1
+            cargo --version; go version; bundle --version; echo "dotnet $(dotnet --version)"; composer --version; } | tee fixtures/TOOLS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: c3-fixtures
+          path: fixtures/
