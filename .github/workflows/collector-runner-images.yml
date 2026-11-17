@@ -1,0 +1,45 @@
+name: collector · runner images
+
+# Once a day, on `ubuntu-latest`, records the image name and version, the free
+# space on /, and the versions of node, python, go, docker and git, as one row
+# of collectors/runner-images/images.csv. Scheduled runs here can be hours
+# late, so each row carries the time the read happened.
+on:
+  schedule:
+    - cron: "43 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collectors-commit
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read the image
+        run: collectors/runner-images/collect.sh
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add collectors/runner-images
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          git commit -m "collector: runner image, $(date -u +%Y-%m-%dT%H:%MZ)"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "push failed after 5 attempts" >&2
+          exit 1
