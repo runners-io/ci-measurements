@@ -96,8 +96,8 @@ TYPES["s3"] = dict(
     title="type=s3",
     pre="""      - name: Start MinIO, an S3-compatible server, and make a bucket
         run: |
-          docker run -d --name minio --network host -e MINIO_ROOT_USER=d1access -e MINIO_ROOT_PASSWORD=d1secret-d1secret minio/minio server /data
-          docker run --rm --network host --entrypoint sh minio/mc -c 'until mc alias set d1 http://127.0.0.1:9000 d1access d1secret-d1secret; do sleep 1; done; mc mb d1/buildcache'
+          docker run -d --name minio --network host -e MINIO_ROOT_USER=d1access -e MINIO_ROOT_PASSWORD=d1secret-d1secret quay.io/minio/minio server /data
+          docker run --rm --network host --entrypoint sh quay.io/minio/mc -c 'until mc alias set d1 http://127.0.0.1:9000 d1access d1secret-d1secret; do sleep 1; done; mc mb d1/buildcache'
 """,
     setup="""      - uses: docker/setup-buildx-action@v4
         with:
