@@ -25,3 +25,5 @@ Two parts, both on GitHub-hosted `ubuntu-24.04`, the standard runner for public 
 **Summary.** Median and range of 5 repetitions. The post derives, from the medians, the hit rate above which caching wins: `h = save / (fresh - restore - what is left to do + save)`.
 
 **Results.** `results/grid-<run id>.csv` and `results/installs-<run id>.csv`, one row per job, with the date and run ID.
+
+**Runs.** `C-all.yml` run 44069031081 (2026-11-17), stages 2 and 3: `results/grid-44069031081.csv` (45 jobs) and `results/installs-44069031081.csv` (30 jobs). `C2-snippet.yml` (run 44079310177) runs the timing snippet printed in the post, as printed. The post's break-even hit rate is `(save + 0.4) / (gain + save + 0.4)` with `gain = fresh - restore - what is left to do`, from the medians in the installs file; 0.4 s is the time of a restore that finds nothing, which the C3 runs measured at 0.25 to 0.51 s.

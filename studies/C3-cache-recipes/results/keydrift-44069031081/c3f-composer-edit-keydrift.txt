@@ -1,0 +1,4 @@
+1a2,4
+> c4bca15ef8692a24b3eb3ef55acfc829c961999a697a80532be31fcbaaf46da6  ./vendor/phar-io/manifest/composer.lock
+> acdc44cfeb7623b77a3626ab2b25db618afa071a1437dfe1da0408acdee58626  ./vendor/phpunit/phpunit/composer.lock
+> ca99c48a04bc363fc29485a2cd314c0f0629e1717557c3be06aacdb5c2159547  ./vendor/theseer/tokenizer/composer.lock

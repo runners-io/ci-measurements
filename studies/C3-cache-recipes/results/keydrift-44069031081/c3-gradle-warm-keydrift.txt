@@ -1,0 +1,13 @@
+0a1,12
+> f0245f2b6cf39c791c3bdda0d5da69efbf21ff57cf5b1ea1888c9fb5febdc93c  ./.gradle/9.9.1/checksums/checksums.lock
+> f777b53f45a4edad966ef32c0ae11b7b901e2f905348036bd1f7811b7c4d3fac  ./.gradle/9.9.1/executionHistory/executionHistory.bin
+> 2571882b00bba47086b942f54d23dc2c1c7ff417c914db891dbb50b52a71cd7a  ./.gradle/9.9.1/executionHistory/executionHistory.lock
+> 6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d  ./.gradle/9.9.1/fileChanges/last-build.bin
+> 5cd59d58e89e65f1c433f203729afc347c593ae15c260fe217de77226205b0ed  ./.gradle/9.9.1/fileHashes/fileHashes.bin
+> f4d084c90758ecf6870368aa688fe067188a032f997d207fb893a1789a7a7769  ./.gradle/9.9.1/fileHashes/fileHashes.lock
+> d08a42e14902f17f003401d898dd468b88b1b1e5448b01b47002711e7183d97b  ./.gradle/9.9.1/fileHashes/resourceHashesCache.bin
+> e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./.gradle/9.9.1/gc.properties
+> ff2de09ab3421371b7fa82799e4b36403b4c6629077d6e46d217395e4bf731ba  ./.gradle/buildOutputCleanup/buildOutputCleanup.lock
+> 071bbee5c18a4c399b0417852e40fb57ee3af1c86c3fa5fe0c24066c3b3d96c6  ./.gradle/buildOutputCleanup/cache.properties
+> c92b5107f1f83667a6e3dda873aded24d7e69c7c2c1783f597ffa47a40f869eb  ./.gradle/buildOutputCleanup/outputFiles.bin
+> e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./.gradle/vcs-1/gc.properties
