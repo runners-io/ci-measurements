@@ -1,0 +1,159 @@
+name: D2 phase
+description: >
+  One phase (cold, warm or change) of one cell of study D2 on a fresh BuildKit builder.
+  The builder, and everything it cached locally, is removed first, so the phase starts as a new runner would:
+  only the cache backend knows what an earlier phase built.
+inputs:
+  image:    { description: "node, go or python", required: true }
+  backend:  { description: "none, gha-min, gha-max, registry-min, registry-max, inline or local", required: true }
+  phase:    { description: "cold, warm or change", required: true }
+  prev:     { description: "the phase whose local cache this one restores (local backend only)", required: false, default: "" }
+  rep:      { description: "the repetition number", required: true }
+  csv:      { description: "path of the CSV this phase appends a row to", required: true }
+runs:
+  using: composite
+  steps:
+    - name: Remove the previous builder and everything it held
+      shell: bash
+      run: |
+        for b in $(docker buildx ls --format '{{.Name}}' | grep -v -x -e default -e desktop-linux || true); do
+          docker buildx rm --force "$b" || true
+        done
+        docker system prune --all --force >/dev/null || true
+        rm -rf "$RUNNER_TEMP/d2-ctx"
+
+    - name: Plan the cache arguments for this cell
+      id: plan
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        BACKEND: ${{ inputs.backend }}
+        OWNER: ${{ github.repository_owner }}
+        RUN_ID: ${{ github.run_id }}
+      run: |
+        reg="ghcr.io/${OWNER}/ci-measurements"
+        tag="${reg}:d2-${IMAGE}-${BACKEND}-${RUN_ID}"
+        cacheref="${reg}:d2cache-${IMAGE}-${BACKEND}-${RUN_ID}"
+        scope="d2-${IMAGE}-${BACKEND}-${RUN_ID}"
+        case "$BACKEND" in
+          none)         from="";                                         to="" ;;
+          gha-min)      from="type=gha,scope=${scope}";                  to="type=gha,scope=${scope},mode=min" ;;
+          gha-max)      from="type=gha,scope=${scope}";                  to="type=gha,scope=${scope},mode=max" ;;
+          registry-min) from="type=registry,ref=${cacheref}";            to="type=registry,ref=${cacheref},mode=min" ;;
+          registry-max) from="type=registry,ref=${cacheref}";            to="type=registry,ref=${cacheref},mode=max" ;;
+          inline)       from="type=registry,ref=${tag}";                 to="type=inline" ;;
+          local)        from="type=local,src=${RUNNER_TEMP}/d2-cache";   to="type=local,dest=${RUNNER_TEMP}/d2-cache-new,mode=max" ;;
+          *) echo "unknown backend $BACKEND"; exit 1 ;;
+        esac
+        {
+          echo "tag=$tag"
+          echo "cacheref=$cacheref"
+          echo "from=$from"
+          echo "to=$to"
+          echo "scope=$scope"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Time zero for set-up
+      shell: bash
+      run: echo "T_SETUP0=$(date +%s.%N)" >> "$GITHUB_ENV"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      with:
+        name: d2-${{ inputs.phase }}
+
+    - name: Time the set-up
+      shell: bash
+      run: echo "T_REST0=$(date +%s.%N)" >> "$GITHUB_ENV"
+
+    - name: Restore the local cache from the previous phase
+      id: restore
+      if: inputs.backend == 'local' && inputs.prev != ''
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/d2-cache
+        key: d2local-${{ inputs.image }}-${{ github.run_id }}-${{ inputs.prev }}
+
+    - name: Time the restore
+      shell: bash
+      run: echo "T_BUILD0=$(date +%s.%N)" >> "$GITHUB_ENV"
+
+    - name: Change one line of source
+      if: inputs.phase == 'change'
+      shell: bash
+      run: |
+        cd "studies/D2-docker-cache-backends/apps/${{ inputs.image }}"
+        f=$(grep -l 'd2-change-line: 0' -r . --include='*.ts' --include='*.go' --include='*.py' | head -1)
+        perl -0pi -e 's/(d2-change-line: )0(\n[^\n]*= )0/${1}1${2}1/' "$f"
+        git diff --stat -- "$f"
+        grep -A1 'd2-change-line' "$f"
+
+    - name: Build and push
+      id: build
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: studies/D2-docker-cache-backends/apps/${{ inputs.image }}
+        push: true
+        tags: ${{ steps.plan.outputs.tag }}
+        cache-from: ${{ steps.plan.outputs.from }}
+        cache-to: ${{ steps.plan.outputs.to }}
+
+    - name: Time the build
+      shell: bash
+      run: echo "T_BUILD1=$(date +%s.%N)" >> "$GITHUB_ENV"
+
+    - name: Rotate the local cache
+      if: inputs.backend == 'local'
+      shell: bash
+      run: |
+        rm -rf "$RUNNER_TEMP/d2-cache"
+        mv "$RUNNER_TEMP/d2-cache-new" "$RUNNER_TEMP/d2-cache"
+        echo "LOCAL_BYTES=$(du -sb "$RUNNER_TEMP/d2-cache" | cut -f1)" >> "$GITHUB_ENV"
+
+    - name: Save the local cache for the next phase
+      if: inputs.backend == 'local'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/d2-cache
+        key: d2local-${{ inputs.image }}-${{ github.run_id }}-${{ inputs.phase }}
+
+    - name: Time the save
+      shell: bash
+      run: echo "T_SAVE1=$(date +%s.%N)" >> "$GITHUB_ENV"
+
+    - name: Size the cache, then record the row
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        BACKEND: ${{ inputs.backend }}
+        PHASE: ${{ inputs.phase }}
+        REP: ${{ inputs.rep }}
+        CSV: ${{ inputs.csv }}
+        CACHEREF: ${{ steps.plan.outputs.cacheref }}
+        TAG: ${{ steps.plan.outputs.tag }}
+      run: |
+        bytes=""
+        case "$BACKEND" in
+          registry-*) bytes=$(docker buildx imagetools inspect "$CACHEREF" --raw 2>/dev/null | python3 -c 'import sys,json;m=json.load(sys.stdin);print(sum(l["size"] for l in m.get("layers",[])) if "layers" in m else "")' || true) ;;
+          inline)     bytes=$(docker buildx imagetools inspect "$TAG" --raw 2>/dev/null | python3 -c 'import sys,json;m=json.load(sys.stdin);print(sum(l["size"] for l in m.get("layers",[])) if "layers" in m else "")' || true) ;;
+          local)      bytes="${LOCAL_BYTES:-}" ;;
+        esac
+        export BYTES="$bytes"
+        python3 - <<PY
+        import os, datetime
+        e = os.environ
+        t = lambda k: float(e[k])
+        setup = t("T_REST0") - t("T_SETUP0")
+        restore = t("T_BUILD0") - t("T_REST0")
+        build = t("T_BUILD1") - t("T_BUILD0")
+        save = t("T_SAVE1") - t("T_BUILD1")
+        row = [
+            datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            e["GITHUB_RUN_ID"], e["GITHUB_RUN_ATTEMPT"], e["REP"], e["IMAGE"], e["BACKEND"], e["PHASE"],
+            f"{setup:.1f}", f"{restore:.1f}", f"{build:.1f}", f"{save:.1f}", f"{setup+restore+build+save:.1f}",
+            e.get("BYTES",""), e.get("ImageVersion",""),
+        ]
+        with open(e["CSV"], "a") as f:
+            f.write(",".join(row) + "\n")
+        print(",".join(row))
+        PY

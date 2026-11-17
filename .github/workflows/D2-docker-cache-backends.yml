@@ -1,0 +1,96 @@
+name: D2 · Docker cache backends
+# Study D2: how long a Docker build takes under each cache backend, on three Dockerfiles, in three cases.
+# The method is studies/D2-docker-cache-backends/METHOD.md. One dispatch is one repetition; the repetitions run one after
+# another, because the gha backend shares one 10 GB cache per repository and two repetitions would evict each other.
+on:
+  workflow_dispatch:
+    inputs:
+      rep:
+        description: "Repetition number, written to every row"
+        required: true
+        default: "1"
+      images:
+        description: "JSON list of the images to build"
+        required: false
+        default: '["node","go","python"]'
+      backends:
+        description: "JSON list of the backends to try"
+        required: false
+        default: '["none","gha-min","gha-max","registry-min","registry-max","inline","local"]'
+
+permissions:
+  contents: read
+
+jobs:
+  cell:
+    name: ${{ matrix.image }} · ${{ matrix.backend }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(inputs.images) }}
+        backend: ${{ fromJSON(inputs.backends) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Start the rows file
+        run: echo "CSV=$RUNNER_TEMP/rows.csv" >> "$GITHUB_ENV"
+      - name: Cold
+        uses: ./.github/actions/d2-phase
+        with: { image: "${{ matrix.image }}", backend: "${{ matrix.backend }}", phase: cold, rep: "${{ inputs.rep }}", csv: "${{ env.CSV }}" }
+      - name: Warm (nothing changed)
+        uses: ./.github/actions/d2-phase
+        with: { image: "${{ matrix.image }}", backend: "${{ matrix.backend }}", phase: warm, prev: cold, rep: "${{ inputs.rep }}", csv: "${{ env.CSV }}" }
+      - name: Change (one line of source changed)
+        uses: ./.github/actions/d2-phase
+        with: { image: "${{ matrix.image }}", backend: "${{ matrix.backend }}", phase: change, prev: warm, rep: "${{ inputs.rep }}", csv: "${{ env.CSV }}" }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: rows-${{ matrix.image }}-${{ matrix.backend }}
+          path: ${{ runner.temp }}/rows.csv
+          if-no-files-found: warn
+
+  collect:
+    needs: cell
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: rows-*
+          path: rows
+      - name: Merge the rows and commit them
+        run: |
+          out="studies/D2-docker-cache-backends/results/runs/${GITHUB_RUN_ID}.csv"
+          mkdir -p "$(dirname "$out")"
+          echo "date_utc,run_id,run_attempt,rep,image,backend,phase,setup_s,restore_s,build_s,save_s,total_s,cache_bytes,runner_image" > "$out"
+          cat rows/*/rows.csv >> "$out"
+          wc -l "$out"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$out"
+          git commit -m "D2: rows of run ${GITHUB_RUN_ID}"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 5
+          done
+          exit 1
+      - name: Delete every Actions cache entry of this repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache delete --all --repo "$GITHUB_REPOSITORY" || true

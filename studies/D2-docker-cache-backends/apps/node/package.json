@@ -1,0 +1,21 @@
+{
+  "name": "d2-node-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "axios": "*",
+    "express": "*",
+    "pino": "*",
+    "zod": "*"
+  },
+  "devDependencies": {
+    "@types/express": "*",
+    "@types/node": "24",
+    "eslint": "*",
+    "typescript": "*",
+    "typescript-eslint": "*"
+  }
+}
