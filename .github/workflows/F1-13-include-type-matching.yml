@@ -12,3 +12,17 @@ jobs:
             npm: "10"
     steps:
       - run: echo '${{ toJSON(matrix) }}'
+  case_and_bool:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        os: [Ubuntu-24.04]
+        flag: [true]
+        include:
+          # Same label in lower case, and the string "true" for the boolean true.
+          - os: ubuntu-24.04
+            note: case-matched
+          - flag: "true"
+            note2: bool-matched
+    steps:
+      - run: echo '${{ toJSON(matrix) }}'
