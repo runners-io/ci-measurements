@@ -29,7 +29,7 @@ F1-13 is observed behaviour that GitHub's documentation does not state, on one d
 
 ## How
 
-- Image: `ubuntu-24.04` unless a leg names another (`ubuntu-22.04`, `windows-2025`, `ubuntu-24.04` only for F1-11 to F1-14).
+- Image: `ubuntu-24.04`, except the legs of F1-01 to F1-05 that name `ubuntu-22.04` or `windows-2025`.
 - Actions are pinned by commit: checkout v7.0.1, 3d3c42e5aac5ba805825da76410c181273ba90b1.
 - These are behaviour checks, not timings. F1-07 and F1-10 read start and finish times from the jobs API, to the second, and say so.
 - Two dispatches were rejected by GitHub with HTTP 422 before they ran: F1-08 (an output name built from `matrix.version`, "Unrecognized named-value: 'matrix'") and F1-10 (a `parallel` group written without `background`, first attempt, which GitHub rejected as "Unexpected value 'parallel'"). Both were fixed and re-run; the failing first runs of F1-08 and F1-10 are in the run history and are not in the CSV.
