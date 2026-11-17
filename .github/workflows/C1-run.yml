@@ -32,6 +32,8 @@ jobs:
       # The workspace under test: helix 25.07.1, pinned by commit. Public, MPL-2.0, 14 workspace members, 321 locked packages.
       HELIX_SHA: ac94841019910ff405f31a8668389a06a169e0e5
       CARGO_INCREMENTAL: "0"
+      # helix-term's build script otherwise fetches and compiles 245 tree-sitter grammars from git: network, not compilation.
+      HELIX_DISABLE_AUTO_GRAMMAR_BUILD: "1"
       CARGO_TERM_COLOR: never
       SCCACHE_DIR: /home/runner/.cache/sccache
     steps:
