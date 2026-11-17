@@ -1,0 +1,2 @@
+read_at_utc,run_id,image_os,image_version,os_version_id,kernel,cpus,mem_kib,root_size,root_avail,root_avail_bytes,node,python,go,docker,git
+2026-11-17T10:09:43Z,44062183779,ubuntu26,20261111.196.1,26.04,7.0.0-1019-azure,4,16366640,145G,88G,93643522048,v24.22.2,3.14.4,1.26.11,29.4.2,2.56.1
