@@ -26,10 +26,8 @@ for run_id in sys.argv[1:]:
     jobs = json.loads(gh("api", "--paginate", "--slurp", f"repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100"))
     jobs = [j for page in jobs for j in page["jobs"]]
     with tempfile.TemporaryDirectory() as d:
-        for attempt in range(4):  # a download of 90 artifacts sometimes fails once on a rate limit
-            if subprocess.run(["gh", "run", "download", run_id, "-R", REPO, "-D", d, "-p", "r-*"], capture_output=True).returncode == 0:
-                break
-        else:
+        # One attempt only: a failed download is rerun by hand after the API rate limit resets, never in a retry loop.
+        if subprocess.run(["gh", "run", "download", run_id, "-R", REPO, "-D", d, "-p", "r-*"], capture_output=True).returncode != 0:
             sys.exit(f"could not download the artifacts of run {run_id}")
         for j in jobs:
             m = re.match(r"^(\S+) (\d+) shard (\d+) rep (\d+)$", j["name"])
