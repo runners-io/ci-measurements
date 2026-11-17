@@ -5,7 +5,7 @@
 # has, its median, its 95th percentile (nearest rank) and its longest duration, and a suggested timeout-minutes:
 # twice the p95, rounded up to whole minutes, and never under 5.
 #
-# Needs: gh (logged in), jq, awk. It reads the jobs API only, so it works on a private repository you can read.
+# Needs: gh (logged in), jq, awk. It reads the Actions API only, so it works on a private repository you can read.
 # It makes one API call for the run list and one for each run, so RUNS=100 is 101 calls of the 5,000 an hour a
 # user token gets. A job's duration is completed_at minus started_at: the time it ran, not the time it queued.
 set -euo pipefail

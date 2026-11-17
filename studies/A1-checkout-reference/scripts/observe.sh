@@ -5,7 +5,7 @@
 #          includeif_in_git_config,credential_files_in_runner_temp,output_commit_matches_head,output_ref
 set -u
 version=$1 case=$2 dir=$3 out_commit=${4:-} out_ref=${5:-}
-runtime=$(grep -m1 'using:' "/home/runner/work/_actions/actions/checkout/${version}/action.yml" 2>/dev/null | awk '{print $2}')
+runtime=$(grep -m1 'using:' "/home/runner/work/_actions/actions/checkout/${version}/action.yml" 2>/dev/null | awk '{print $2}' | tr -d '\r')
 cd "$dir" || { echo "$version,$case,$runtime,,,,,,,,,,,"; exit 0; }
 shallow=$(git rev-parse --is-shallow-repository)
 commits=$(git rev-list --count HEAD)
