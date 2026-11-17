@@ -1,0 +1,9 @@
+scenario,reps,pushes_span_seconds_median,runs_that_started_a_job_median,job_seconds_per_rep_median,job_seconds_per_rep_min,job_seconds_per_rep_max,minutes_per_rep_median,minutes_per_rep_min,minutes_per_rep_max,first_push_to_last_job_done_seconds_median,first_push_to_last_job_done_seconds_min,first_push_to_last_job_done_seconds_max,patterns
+cancel,10,42.0,4.0,81.0,70,87,4.0,3,4,117.7,102.1,127.2,10x [1:cut 2:dropped 3:cut 4:cut 5:ok]
+default-group,10,44.2,2.0,88.0,84,91,2.0,2,2,105.8,100.8,109.7,10x [1:ok 2:dropped 3:dropped 4:dropped 5:ok]
+head-ref,5,42.7,5,216,215,221,5,5,5,90.5,89.6,91.6,5x [1:ok 2:ok 3:ok 4:ok 5:ok]
+matrix-keyed,5,41.4,5,307,287,584,15,15,19,104.9,97.9,383.9,5x [1:cut 2:cut 3:cut 4:cut 5:ok]
+matrix-shared,5,41.2,5,108,103,392,13,9,16,106.6,94.6,384.6,5x [1:cut 2:cut 3:cut 4:cut 5:cut]
+none,10,43.2,5.0,217.5,215,222,5.0,5,5,104.9,94.9,108.9,10x [1:ok 2:ok 3:ok 4:ok 5:ok]
+queue-max-cancel,5,41.6,0,0,0,0,0,0,0,,,,5x [1:invalid 2:invalid 3:invalid 4:invalid 5:invalid]
+queue-max,10,41.9,5.0,216.0,213,220,5.0,5,5,298.6,281.1,311.0,10x [1:ok 2:ok 3:ok 4:ok 5:ok]

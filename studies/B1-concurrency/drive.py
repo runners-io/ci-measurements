@@ -23,15 +23,6 @@ def sh(*args, cwd=None):
     return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def gh_api(path):
-    for attempt in range(5):
-        try:
-            return json.loads(sh("gh", "api", path))
-        except subprocess.CalledProcessError:
-            time.sleep(2 * (attempt + 1))
-    raise SystemExit(f"gh api {path} failed")
-
-
 def one_rep(scenario, rep, day, out, lock):
     branch = f"b1-{scenario}/{day}-r{rep:02d}"
     with tempfile.TemporaryDirectory() as d:
@@ -77,32 +68,69 @@ def parse(ts):
     return datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc) if ts else None
 
 
-def wait_until_idle(pushes, scenario):
-    """Poll until no run for these commits is still queued, pending or running (up to 20 minutes)."""
-    deadline = time.time() + 1200
+_calls = 0
+
+
+def quota_guard():
+    """Called before every REST call: at most one call every 3 seconds (about 20 a minute), and a check of the shared quota every 20 calls.
+
+    The quota (5,000 an hour) is shared with other people's jobs and with the merge waiters. Below 1,000 left, sleep until
+    the reset rather than spend the rest (RUN-4125: the first version of this driver ran the account dry).
+    """
+    global _calls
+    _calls += 1
+    time.sleep(3.0)
+    if _calls % 20 == 1:
+        got = json.loads(sh("gh", "api", "rate_limit"))["resources"]["core"]  # this endpoint is not counted against the quota
+        if got["remaining"] < 1000:
+            raise SystemExit(f"stopping: only {got['remaining']} REST calls left in the shared quota (below 1,000)")
+
+
+def gh_api(path):
+    quota_guard()
+    return json.loads(sh("gh", "api", path))
+
+
+def push_runs(scenario, shas):
+    """The push-event runs of these commits, by head sha: one listing of the scenario's own workflow (50 runs fit in a page)."""
+    found = {}
+    runs = gh_api(f"repos/{REPO}/actions/workflows/B1-concurrency-{scenario}.yml/runs?event=push&per_page=100")["workflow_runs"]
+    for r in runs:
+        if r["head_sha"] in shas:
+            found.setdefault(r["head_sha"], []).append(r)
+    return found
+
+
+def wait_until_idle(pushes, scenario, expect_seconds):
+    """Sleep for the longest the scenario could take, then read ONE listing of its workflow's runs, once a minute, until none is busy."""
+    shas = {p["sha"] for p in pushes}
+    time.sleep(expect_seconds)
+    deadline = time.time() + 1800
     while time.time() < deadline:
-        busy = 0
-        for branch in sorted({p["branch"] for p in pushes}):
-            runs = gh_api(f"repos/{REPO}/actions/runs?branch={branch.replace('/', '%2F')}&event=push&per_page=20")["workflow_runs"]
-            busy += sum(1 for r in runs if r["status"] != "completed")
-        if busy == 0:
+        found = push_runs(scenario, shas)
+        busy = sum(1 for rs in found.values() for r in rs if r["status"] != "completed")
+        if busy == 0 and len(found) == len(shas):
             return
-        time.sleep(10)
-    raise SystemExit("runs were still busy after 20 minutes")
+        time.sleep(60)
+    raise SystemExit("runs were still busy after 30 minutes")
 
 
 def cmd_collect(scenario):
     pushes = list(csv.DictReader(open(os.path.join(RESULTS, f"pushes-{scenario}.csv"))))
-    wait_until_idle(pushes, scenario)
+    wait_until_idle(pushes, scenario, int(os.environ.get('B1_WAIT_SECONDS', '0')))
+    by_sha = push_runs(scenario, {p["sha"] for p in pushes})
     rows = []
     for p in pushes:
-        runs = gh_api(f"repos/{REPO}/actions/runs?head_sha={p['sha']}&event=push&per_page=20")["workflow_runs"]
-        runs = [r for r in runs if r["name"] == f"B1 {scenario}"]
+        path_name = f".github/workflows/B1-concurrency-{scenario}.yml"  # a workflow GitHub refuses as invalid is named by its path
+        runs = [r for r in by_sha.get(p["sha"], []) if r["name"] in (f"B1 {scenario}", path_name)]
         if not runs:
             rows.append({**p, "run_id": "", "note": "no run was created"})
             continue
         for r in runs:
-            jobs = gh_api(f"repos/{REPO}/actions/runs/{r['id']}/jobs?per_page=50")["jobs"]
+            if r["name"] == path_name:
+                jobs = []  # an invalid workflow has no jobs: one fewer call
+            else:
+                jobs = gh_api(f"repos/{REPO}/actions/runs/{r['id']}/jobs?per_page=50")["jobs"]
             if not jobs:
                 rows.append({**p, "run_id": r["id"], "run_status": r["status"], "run_conclusion": r["conclusion"], "run_created": r["created_at"], "run_started": r["run_started_at"], "run_updated": r["updated_at"], "job": "", "note": "no job"})
             for j in jobs:
