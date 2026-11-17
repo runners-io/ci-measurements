@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""B1: push five commits to a branch, about two seconds apart, and record what the runs did.
+"""B1: push five commits to a branch, back to back, and record what the runs did.
 
   drive.py push   <scenario> <reps>   # push, in parallel, one branch per rep
   drive.py collect <scenario>         # read the runs back and append to results/
@@ -13,7 +13,6 @@ REPO = "runners-io/ci-measurements"
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.path.join(HERE, "results")
 PUSHES = 5
-GAP_SECONDS = 1.5  # between the end of one push and the start of the next
 
 
 def now_ms():
@@ -40,23 +39,25 @@ def one_rep(scenario, rep, day, out, lock):
         sh("git", "config", "user.name", "Grant Unwin", cwd=d)
         sh("git", "config", "user.email", os.environ["B1_EMAIL"], cwd=d)
         sh("git", "checkout", "-q", "-b", branch, cwd=d)
+        shas = []
         for n in range(1, PUSHES + 1):
             with open(os.path.join(d, "studies", "B1-concurrency", "push.txt"), "w") as f:
                 f.write(f"{scenario} rep {rep} push {n}\n")
             sh("git", "add", "-A", cwd=d)
             sh("git", "commit", "-q", "-m", f"b1 {scenario} r{rep:02d} push {n}", cwd=d)
-            sha = sh("git", "rev-parse", "HEAD", cwd=d)
+            shas.append(sh("git", "rev-parse", "HEAD", cwd=d))
+        # All five commits exist before the first push, so the pushes are back to back; each is a separate `git push`.
+        for n, sha in enumerate(shas, 1):
             t0 = now_ms()
-            sh("git", "push", "-q", "origin", f"HEAD:refs/heads/{branch}", cwd=d)
+            sh("git", "push", "-q", "origin", f"{sha}:refs/heads/{branch}", cwd=d)
             t1 = now_ms()
             with lock:
                 out.append({"scenario": scenario, "rep": rep, "branch": branch, "push_n": n, "sha": sha, "push_started": t0, "push_finished": t1})
-            time.sleep(GAP_SECONDS)
 
 
 def cmd_push(scenario, reps):
     os.makedirs(RESULTS, exist_ok=True)
-    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
+    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M")
     out, lock = [], threading.Lock()
     threads = [threading.Thread(target=one_rep, args=(scenario, r, day, out, lock)) for r in range(1, reps + 1)]
     for t in threads:
@@ -76,8 +77,23 @@ def parse(ts):
     return datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc) if ts else None
 
 
+def wait_until_idle(pushes, scenario):
+    """Poll until no run for these commits is still queued, pending or running (up to 20 minutes)."""
+    deadline = time.time() + 1200
+    while time.time() < deadline:
+        busy = 0
+        for branch in sorted({p["branch"] for p in pushes}):
+            runs = gh_api(f"repos/{REPO}/actions/runs?branch={branch.replace('/', '%2F')}&event=push&per_page=20")["workflow_runs"]
+            busy += sum(1 for r in runs if r["status"] != "completed")
+        if busy == 0:
+            return
+        time.sleep(10)
+    raise SystemExit("runs were still busy after 20 minutes")
+
+
 def cmd_collect(scenario):
     pushes = list(csv.DictReader(open(os.path.join(RESULTS, f"pushes-{scenario}.csv"))))
+    wait_until_idle(pushes, scenario)
     rows = []
     for p in pushes:
         runs = gh_api(f"repos/{REPO}/actions/runs?head_sha={p['sha']}&event=push&per_page=20")["workflow_runs"]
