@@ -28,12 +28,21 @@ jobs:
         rep: ${{ fromJSON(inputs.reps) }}
         eco:
           - name: npm
+            fixture: studies/C3-cache-recipes/fixtures/npm
             install: npm ci
             verify: node -e "require('react'); require('webpack'); require('typescript')"
             cache_paths: "~/.npm"
             tree_paths: "node_modules"
             wipe: "rm -rf node_modules ~/.npm"
+          - name: npm-large
+            fixture: studies/C2-cache-vs-rebuild/fixtures/npm-large
+            install: npm ci
+            verify: node -e "require('react'); require('webpack'); require('typescript'); require('next')"
+            cache_paths: "~/.npm"
+            tree_paths: "node_modules"
+            wipe: "rm -rf node_modules ~/.npm"
           - name: pnpm
+            fixture: studies/C3-cache-recipes/fixtures/pnpm
             setup: npm install -g pnpm
             install: pnpm install --frozen-lockfile
             verify: node -e "require('react'); require('webpack'); require('typescript')"
@@ -41,6 +50,7 @@ jobs:
             tree_paths: "node_modules"
             wipe: "rm -rf node_modules ~/.local/share/pnpm"
           - name: pip
+            fixture: studies/C3-cache-recipes/fixtures/pip
             python: "3.12"
             install: python -m venv .venv && .venv/bin/pip install --quiet -r requirements.txt
             verify: .venv/bin/python -c "import pandas, numpy, flask, requests"
@@ -48,6 +58,7 @@ jobs:
             tree_paths: ".venv"
             wipe: "rm -rf .venv ~/.cache/pip"
           - name: cargo
+            fixture: studies/C3-cache-recipes/fixtures/cargo
             install: cargo build --locked
             verify: cargo build --locked
             cache_paths: |
@@ -61,6 +72,7 @@ jobs:
               target/
             wipe: "rm -rf target ~/.cargo/registry ~/.cargo/git"
           - name: go
+            fixture: studies/C3-cache-recipes/fixtures/go
             install: go build ./...
             verify: go build ./...
             cache_paths: "~/go/pkg/mod"
@@ -70,6 +82,7 @@ jobs:
             wipe: "go clean -cache -modcache"
     env:
       ECO: ${{ matrix.eco.name }}
+      FIXTURE: ${{ matrix.eco.fixture }}
       REP: ${{ matrix.rep }}
       KEY: c2i-${{ github.run_id }}-${{ matrix.eco.name }}-${{ matrix.rep }}
       GH_TOKEN: ${{ github.token }}
@@ -80,7 +93,7 @@ jobs:
           path: _repo
       - name: Use the fixture as the project
         run: |
-          cp -a _repo/studies/C3-cache-recipes/fixtures/$ECO/. .
+          cp -a "_repo/$FIXTURE/." .
           rm -rf _repo
       - uses: actions/setup-python@v7
         if: matrix.eco.python
