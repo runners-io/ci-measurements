@@ -24,8 +24,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Start an S3-compatible server (Adobe S3Mock) with a bucket
         run: |
-          docker run -d --name s3mock --network host -e initialBuckets=buildcache -e COM_ADOBE_TESTING_S3MOCK_STORE_REGION=us-east-1 adobe/s3mock
-          until curl -fs http://127.0.0.1:9090/ >/dev/null || curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9090/ | grep -q 200; do sleep 1; done
+          docker run -d --name s3mock --network host adobe/s3mock
+          until curl -fs http://127.0.0.1:9090/ >/dev/null; do sleep 1; done
+          curl -fsS -X PUT http://127.0.0.1:9090/buildcache
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: network=host
