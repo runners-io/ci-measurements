@@ -1,0 +1,175 @@
+# C1: one cell of the sccache study (one arm, one phase, one repetition). Called by C1-sccache.yml.
+name: C1 one cell
+
+on:
+  workflow_call:
+    inputs:
+      arm:
+        description: "none, target-cache, sccache-gha or sccache-local"
+        type: string
+        required: true
+      phase:
+        description: "cold (nothing cached yet) or warm (the cold run's cache is there)"
+        type: string
+        required: true
+      rep:
+        description: "repetition number; also part of every cache key, so repetitions never share a cache"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  cell:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      ARM: ${{ inputs.arm }}
+      PHASE: ${{ inputs.phase }}
+      REP: ${{ inputs.rep }}
+      KEYBASE: c1-${{ github.run_id }}-${{ inputs.rep }}
+      # The workspace under test: helix 25.07.1, pinned by commit. Public, MPL-2.0, 14 workspace members, 321 locked packages.
+      HELIX_SHA: ac94841019910ff405f31a8668389a06a169e0e5
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: never
+      SCCACHE_DIR: /home/runner/.cache/sccache
+    steps:
+      - name: Record the machine
+        run: |
+          echo "image=${ImageOS}-${ImageVersion}"
+          echo "nproc=$(nproc)"
+          free -m | sed -n 2p
+          df -h / | tail -1
+          rustc --version
+          cargo --version
+          echo "IMAGE=${ImageOS}-${ImageVersion}" >> "$GITHUB_ENV"
+          echo "NPROC=$(nproc)" >> "$GITHUB_ENV"
+          echo "RUSTC=$(rustc --version)" >> "$GITHUB_ENV"
+
+      - name: Fetch the source at the pinned commit
+        run: |
+          mkdir src && cd src
+          git init --quiet
+          git remote add origin https://github.com/helix-editor/helix.git
+          git fetch --quiet --depth 1 origin "$HELIX_SHA"
+          git checkout --quiet FETCH_HEAD
+          # Use the runner's own Rust: the repository pins 1.82.0 and a toolchain install would be timed in every arm.
+          rm -f rust-toolchain.toml
+
+      - name: Fetch crates (timed on its own, the same in every arm)
+        working-directory: src
+        run: |
+          a=$(date +%s.%N)
+          cargo fetch --locked
+          b=$(date +%s.%N)
+          echo "FETCH_S=$(awk -v a="$a" -v b="$b" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+
+      - name: Install sccache
+        if: startsWith(env.ARM, 'sccache')
+        uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          disable_annotations: true
+
+      - name: Start the restore timer
+        run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+
+      - name: Restore target/ (target-cache arm)
+        id: restore_target
+        if: env.ARM == 'target-cache'
+        uses: actions/cache/restore@v6
+        with:
+          path: src/target
+          key: ${{ env.KEYBASE }}-target
+
+      - name: Restore the sccache directory (sccache-local arm)
+        id: restore_local
+        if: env.ARM == 'sccache-local'
+        uses: actions/cache/restore@v6
+        with:
+          path: /home/runner/.cache/sccache
+          key: ${{ env.KEYBASE }}-sccache-dir
+
+      - name: Stop the restore timer
+        run: |
+          b=$(date +%s.%N)
+          echo "RESTORE_S=$(awk -v a="$T_A" -v b="$b" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+          echo "CACHE_HIT=${{ steps.restore_target.outputs.cache-hit }}${{ steps.restore_local.outputs.cache-hit }}" >> "$GITHUB_ENV"
+
+      - name: Configure sccache
+        if: startsWith(env.ARM, 'sccache')
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          if [ "$ARM" = sccache-gha ]; then
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+            # Namespaces this repetition's entries: a different value is a different cache version, so a cold run is cold.
+            echo "SCCACHE_GHA_VERSION=$KEYBASE" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build (the timed step)
+        working-directory: src
+        run: |
+          if [ -n "$RUSTC_WRAPPER" ]; then sccache --zero-stats >/dev/null; fi
+          a=$(date +%s.%N)
+          cargo build --workspace --locked
+          b=$(date +%s.%N)
+          echo "BUILD_S=$(awk -v a="$a" -v b="$b" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+          if [ -n "$RUSTC_WRAPPER" ]; then
+            sccache --show-stats
+            sccache --show-stats --stats-format json > "$RUNNER_TEMP/sccache-stats.json"
+          fi
+
+      - name: Measure what is on disk
+        run: |
+          echo "TARGET_MB=$(du -sm src/target | cut -f1)" >> "$GITHUB_ENV"
+          echo "TARGET_FILES=$(find src/target -type f | wc -l)" >> "$GITHUB_ENV"
+          if [ "$ARM" = sccache-local ]; then
+            sccache --stop-server || true
+            echo "CACHEDIR_MB=$(du -sm "$SCCACHE_DIR" | cut -f1)" >> "$GITHUB_ENV"
+            echo "CACHEDIR_FILES=$(find "$SCCACHE_DIR" -type f | wc -l)" >> "$GITHUB_ENV"
+          fi
+
+      - name: Start the save timer
+        run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+
+      - name: Save target/ (target-cache arm, cold run only)
+        if: env.ARM == 'target-cache' && env.PHASE == 'cold'
+        uses: actions/cache/save@v6
+        with:
+          path: src/target
+          key: ${{ env.KEYBASE }}-target
+
+      - name: Save the sccache directory (sccache-local arm, cold run only)
+        if: env.ARM == 'sccache-local' && env.PHASE == 'cold'
+        uses: actions/cache/save@v6
+        with:
+          path: /home/runner/.cache/sccache
+          key: ${{ env.KEYBASE }}-sccache-dir
+
+      - name: Stop the save timer and write the row
+        run: |
+          b=$(date +%s.%N)
+          SAVE_S=$(awk -v a="$T_A" -v b="$b" 'BEGIN{printf "%.2f", b-a}')
+          # Only the arms that save have a save time to report.
+          if ! { [ "$PHASE" = cold ] && { [ "$ARM" = target-cache ] || [ "$ARM" = sccache-local ]; }; }; then SAVE_S=""; fi
+          HITS=""; MISSES=""; WERR=""; RERR=""; REQS=""
+          if [ -f "$RUNNER_TEMP/sccache-stats.json" ]; then
+            J="$RUNNER_TEMP/sccache-stats.json"
+            REQS=$(jq '.stats.compile_requests // 0' "$J")
+            HITS=$(jq '[.stats.cache_hits.counts // {} | to_entries[].value] | add // 0' "$J")
+            MISSES=$(jq '[.stats.cache_misses.counts // {} | to_entries[].value] | add // 0' "$J")
+            WERR=$(jq '.stats.cache_write_errors // 0' "$J")
+            RERR=$(jq '.stats.cache_read_errors // 0' "$J")
+            cp "$J" "sccache-stats-$ARM-$PHASE-$REP.json"
+          fi
+          mkdir -p out
+          echo "arm,phase,rep,run_id,date_utc,image,nproc,rustc,fetch_s,restore_s,restore_hit,build_s,save_s,target_mb,target_files,cachedir_mb,cachedir_files,compile_requests,sccache_hits,sccache_misses,sccache_write_errors,sccache_read_errors" > out/row.csv
+          echo "$ARM,$PHASE,$REP,${{ github.run_id }},$(date -u +%FT%TZ),$IMAGE,$NPROC,\"$RUSTC\",$FETCH_S,$RESTORE_S,$CACHE_HIT,$BUILD_S,$SAVE_S,$TARGET_MB,$TARGET_FILES,$CACHEDIR_MB,$CACHEDIR_FILES,$REQS,$HITS,$MISSES,$WERR,$RERR" >> out/row.csv
+          cat out/row.csv
+          [ -f "sccache-stats-$ARM-$PHASE-$REP.json" ] && cp "sccache-stats-$ARM-$PHASE-$REP.json" out/ || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: c1-${{ inputs.arm }}-${{ inputs.phase }}-${{ inputs.rep }}
+          path: out/
+          retention-days: 30

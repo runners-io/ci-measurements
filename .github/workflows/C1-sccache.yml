@@ -1,0 +1,60 @@
+# C1: sccache on GitHub Actions, measured. Every arm builds the same Rust workspace (helix 25.07.1, pinned) on ubuntu-24.04,
+# once cold and once warm, on a fresh runner each time. See studies/C1-sccache/METHOD.md.
+name: C1 sccache
+
+on:
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: "repetitions, as a JSON list"
+        default: "[1,2,3,4,5]"
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        arm: [none, target-cache, sccache-gha, sccache-local]
+        rep: ${{ fromJSON(inputs.reps) }}
+    uses: ./.github/workflows/C1-run.yml
+    with:
+      arm: ${{ matrix.arm }}
+      phase: cold
+      rep: ${{ matrix.rep }}
+
+  warm:
+    needs: cold
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        arm: [target-cache, sccache-gha, sccache-local]
+        rep: ${{ fromJSON(inputs.reps) }}
+    uses: ./.github/workflows/C1-run.yml
+    with:
+      arm: ${{ matrix.arm }}
+      phase: warm
+      rep: ${{ matrix.rep }}
+
+  cleanup:
+    needs: warm
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete this run's caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Only the keys this study made: its own prefix, and the "sccache/" keys the sccache GHA backend writes.
+          for prefix in "c1-${{ github.run_id }}-" "sccache/"; do
+            gh cache list --key "$prefix" --limit 1000 --json id -q '.[].id' | while read -r id; do gh cache delete "$id" || true; done
+          done
