@@ -8,14 +8,27 @@
   "dependencies": {
     "axios": "*",
     "express": "*",
+    "next": "*",
     "pino": "*",
+    "react": "*",
+    "react-dom": "*",
     "zod": "*"
   },
   "devDependencies": {
     "@types/express": "*",
+    "@types/jest": "*",
     "@types/node": "24",
+    "@types/react": "*",
     "eslint": "*",
+    "jest": "*",
+    "prettier": "*",
+    "ts-jest": "*",
+    "ts-loader": "*",
     "typescript": "*",
-    "typescript-eslint": "*"
+    "typescript-eslint": "*",
+    "vite": "*",
+    "vitest": "*",
+    "webpack": "*",
+    "webpack-cli": "*"
   }
 }

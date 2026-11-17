@@ -1,0 +1,61 @@
+name: D1 · type=inline
+# Study D1: the workflow printed on the post, plus a second build on a fresh builder. The two images carry the same
+# /stamp only if the second build took the RUN layer from the cache. See studies/D1-build-push-reference/METHOD.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: The cache must start empty
+        run: |
+          if docker buildx imagetools inspect ghcr.io/${{ github.repository }}:d1-inline >/dev/null 2>&1; then
+            echo "::error::ghcr.io/${{ github.repository }}:d1-inline exists before the first build; delete it and run again"; exit 1
+          fi
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: studies/D1-build-push-reference
+          push: true
+          tags: ghcr.io/${{ github.repository }}:d1-inline
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:d1-inline
+          cache-to: type=inline
+      - name: Read /stamp from the image just pushed
+        id: first
+        run: echo "stamp=$(docker run --rm ghcr.io/${{ github.repository }}:d1-inline)" >> "$GITHUB_OUTPUT"
+      - name: Remove the builder and everything it held, as a new runner would
+        run: |
+          docker buildx rm --force --all-inactive || true
+          for b in $(docker buildx ls --format '{{.Name}}' | grep -v -x -e default -e desktop-linux || true); do docker buildx rm --force "$b"; done
+          docker system prune --all --force >/dev/null
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: studies/D1-build-push-reference
+          push: true
+          tags: ghcr.io/${{ github.repository }}:d1-inline
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:d1-inline
+          cache-to: type=inline
+      - name: Read /stamp from the image just pushed
+        id: second
+        run: echo "stamp=$(docker run --rm ghcr.io/${{ github.repository }}:d1-inline)" >> "$GITHUB_OUTPUT"
+      - name: The second build must have read the first one's cache
+        run: |
+          echo "first : ${{ steps.first.outputs.stamp }}"
+          echo "second: ${{ steps.second.outputs.stamp }}"
+          [ -n "${{ steps.first.outputs.stamp }}" ] && [ "${{ steps.first.outputs.stamp }}" = "${{ steps.second.outputs.stamp }}" ]
