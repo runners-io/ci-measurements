@@ -22,7 +22,7 @@ Two parts, both on GitHub-hosted `ubuntu-24.04`, the standard runner for public 
 
 **Steps, in one job on one runner, for each project and repetition (5 repetitions).** fresh install, timed (`fresh_s`); measure the cache directory and the installed tree (MB and files); save the cache directory (`save_dir_s`); save the installed tree (`save_tree_s`); wipe everything and drop the page cache; restore the cache directory (`restore_dir_s`), install from it (`install_from_dir_s`); wipe and drop again; restore the installed tree (`restore_tree_s`) and run a check that uses it (`verify_s`: a `require` of the main packages, an import, or a build that finds nothing to do). Entries are deleted at the end.
 
-**Summary.** Median and range of 5 repetitions. The post derives, from the medians, the hit rate above which caching wins: `h = save / (fresh - restore - what is left to do + save)`.
+**Summary.** Median and range of 5 repetitions. The post derives, from the medians, the hit rate above which caching wins: `h = (save + 0.4) / (gain + save + 0.4)`, where `gain = fresh - restore - what is left to do`.
 
 **Results.** `results/grid-<run id>.csv` and `results/installs-<run id>.csv`, one row per job, with the date and run ID.
 
