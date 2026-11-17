@@ -11,7 +11,7 @@ bills), and how unevenly the work fell.
 ## The suite
 
 [networkx](https://github.com/networkx/networkx) at tag `networkx-3.7`, commit `49ca2290b80c1389eb4d8d8e49dcba73f8fec016`:
-263 test files with recorded tests, 10,117 recorded test items (9,320 passed, 60 skipped, 741 xfailed in a run), Python 3.13, installed with
+263 test files with recorded timings, 10,117 recorded test items (9,320 passed, 60 skipped, 741 xfailed in a run), Python 3.13, installed with
 `pip install -e '.[default,test]' pytest-split`. It runs with plain `pytest networkx` (no `-n`, so one process).
 
 ## The three ways
