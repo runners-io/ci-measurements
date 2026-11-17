@@ -1,0 +1,103 @@
+# C2, part A: how long does the Actions cache take to save and to restore a directory of a given size and file count?
+# One job per (cell, repetition): make the tree, save it, delete it, drop the page cache, restore it. See studies/C2-cache-vs-rebuild/METHOD.md.
+name: C2 grid
+
+on:
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: "repetitions, as a JSON list"
+        default: "[1,2,3,4,5]"
+      cells:
+        description: "cells as a JSON list of [size_mb, files]; empty means the full grid"
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      cells: ${{ steps.p.outputs.cells }}
+    steps:
+      - id: p
+        env:
+          CELLS: ${{ inputs.cells }}
+        run: |
+          if [ -z "$CELLS" ]; then
+            CELLS='[[50,100],[50,10000],[50,100000],[500,100],[500,10000],[500,100000],[500,500000],[2000,100],[2000,100000]]'
+          fi
+          echo "cells=$(echo "$CELLS" | jq -c '[.[] | {size_mb: .[0], files: .[1]}]')" >> "$GITHUB_OUTPUT"
+
+  cell:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        cell: ${{ fromJSON(needs.plan.outputs.cells) }}
+        rep: ${{ fromJSON(inputs.reps) }}
+    env:
+      SIZE_MB: ${{ matrix.cell.size_mb }}
+      FILES: ${{ matrix.cell.files }}
+      REP: ${{ matrix.rep }}
+      KEY: c2g-${{ github.run_id }}-${{ matrix.cell.size_mb }}-${{ matrix.cell.files }}-${{ matrix.rep }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Make the tree
+        run: |
+          mkdir -p "$HOME/tree"
+          a=$(date +%s.%N)
+          python3 studies/C2-cache-vs-rebuild/make-tree.py "$HOME/tree" "$SIZE_MB" "$FILES"
+          b=$(date +%s.%N)
+          echo "made in $(awk -v a="$a" -v b="$b" 'BEGIN{printf "%.1f", b-a}') s (not part of the measurement)"
+          echo "TREE_MB=$(du -sm "$HOME/tree" | cut -f1)" >> "$GITHUB_ENV"
+          echo "TREE_FILES=$(find "$HOME/tree" -type f | wc -l)" >> "$GITHUB_ENV"
+          df -h / | tail -1
+      - name: Start the save timer
+        run: sync && echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - uses: actions/cache/save@v6
+        with:
+          path: ~/tree
+          key: ${{ env.KEY }}
+      - name: Stop the save timer
+        run: echo "SAVE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+      - name: Read the size of the stored entry
+        run: |
+          echo "ENTRY_MB=$(gh cache list --key "$KEY" --json sizeInBytes -q '.[0].sizeInBytes / 1048576 | floor')" >> "$GITHUB_ENV"
+      - name: Delete the tree and drop the page cache
+        run: |
+          rm -rf "$HOME/tree"
+          sync
+          echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+      - name: Start the restore timer
+        run: echo "T_A=$(date +%s.%N)" >> "$GITHUB_ENV"
+      - id: restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/tree
+          key: ${{ env.KEY }}
+          fail-on-cache-miss: true
+      - name: Stop the restore timer and check what came back
+        run: |
+          echo "RESTORE_S=$(awk -v a="$T_A" -v b="$(date +%s.%N)" 'BEGIN{printf "%.2f", b-a}')" >> "$GITHUB_ENV"
+          back=$(find "$HOME/tree" -type f | wc -l)
+          echo "files back: $back of $TREE_FILES"
+          [ "$back" = "$TREE_FILES" ] || { echo 'the restore did not bring back every file'; exit 1; }
+      - name: Delete this cell's cache entry and write the row
+        run: |
+          gh cache delete "$KEY" || true
+          mkdir -p out
+          echo "size_mb,files,rep,run_id,date_utc,image,tree_mb,tree_files,entry_mb,save_s,restore_s" > out/row.csv
+          echo "$SIZE_MB,$FILES,$REP,${{ github.run_id }},$(date -u +%FT%TZ),${ImageOS}-${ImageVersion},$TREE_MB,$TREE_FILES,$ENTRY_MB,$SAVE_S,$RESTORE_S" >> out/row.csv
+          cat out/row.csv
+      - uses: actions/upload-artifact@v7
+        with:
+          name: c2g-${{ matrix.cell.size_mb }}-${{ matrix.cell.files }}-${{ matrix.rep }}
+          path: out/
