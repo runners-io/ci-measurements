@@ -1,0 +1,39 @@
+# B4 (RUN-4125): the three ways a run waits, side by side, so the status word each one shows can be read off the API.
+#   no-runner: runs-on names a label no runner has.        Expected: the job stays "queued".
+#   gated:     the job needs an environment's reviewer.     Expected: the run is "waiting".
+#   limited:   a second run of the same job-level group.    Expected: the run is "pending".
+# Dispatch it twice within a few seconds; studies/B4-queued-states/observe.py reads the statuses back and cancels the runs.
+name: B4 queued states
+
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: "Which pair of dispatches this is (recorded in the run name)"
+        required: false
+        default: "b4"
+
+run-name: B4 queued states ${{ inputs.label }}
+
+permissions:
+  contents: read
+
+jobs:
+  no-runner:
+    runs-on: b4-no-such-runner
+    timeout-minutes: 5
+    steps:
+      - run: echo "never runs"
+  gated:
+    runs-on: ubuntu-24.04
+    environment: b4-gated
+    timeout-minutes: 5
+    steps:
+      - run: echo "never runs unless a reviewer approves"
+  limited:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: b4-limited-${{ inputs.label }}
+    steps:
+      - run: sleep 90
