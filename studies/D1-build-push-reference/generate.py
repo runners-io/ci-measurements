@@ -14,7 +14,7 @@ PIN = {
     "docker/login-action@v4": "docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4",
     "docker/setup-buildx-action@v4": "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1",
     "docker/build-push-action@v7": "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0",
-    "docker/setup-qemu-action@v4": "docker/setup-qemu-action@{QEMU} # v4.x",
+    "docker/setup-qemu-action@v4": "docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0",
     "actions/cache@v6": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0",
 }
 
@@ -133,6 +133,39 @@ TYPES["azblob"] = dict(
 """,
 )
 
+TYPES["minimal"] = dict(
+    title="build and push to GHCR",
+    pre="",
+    setup=BUILDX,
+    build="""      - uses: docker/build-push-action@v7
+        with:
+          context: studies/D1-build-push-reference
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+""",
+    proof="""      - name: The pushed image runs
+        run: docker run --rm ghcr.io/${{ github.repository }}:d1-minimal
+""",
+)
+TYPES["multiplatform"] = dict(
+    title="two platforms",
+    pre="""      - uses: docker/setup-qemu-action@v4
+""",
+    setup=BUILDX,
+    build="""      - uses: docker/build-push-action@v7
+        with:
+          context: studies/D1-build-push-reference
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+""",
+    proof="""      - name: The pushed tag lists both platforms
+        run: |
+          docker buildx imagetools inspect ghcr.io/${{ github.repository }}:d1-multiplatform | tee inspect.txt
+          grep -q 'linux/amd64' inspect.txt && grep -q 'linux/arm64' inspect.txt
+""",
+)
+
 def pin(text: str) -> str:
     for k, v in PIN.items():
         text = text.replace(k, v)
@@ -190,6 +223,14 @@ def harness(name, t):
           [ -n "${{ steps.first.outputs.stamp }}" ] && [ "${{ steps.first.outputs.stamp }}" = "${{ steps.second.outputs.stamp }}" ]
 """
     pre = t["pre"]
+    if "proof" in t:
+        body = (
+            f"name: D1 · {t['title']}\n"
+            "# Study D1: the workflow printed on the post, then a check on what it pushed. See studies/D1-build-push-reference/METHOD.md.\n"
+            "on:\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  docker:\n    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    permissions:\n      contents: read\n      packages: write\n    steps:\n"
+            + CHECKOUT + LOGIN + pre + t["setup"] + t["build"] + t["proof"]
+        )
+        return body
     body = (
         f"name: D1 · {t['title']}\n"
         "# Study D1: the workflow printed on the post, plus a second build on a fresh builder. The two images carry the same\n"
