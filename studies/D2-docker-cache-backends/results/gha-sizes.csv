@@ -1,2 +1,3 @@
 date_utc,run_id,image,backend,cache_entries,cache_bytes,runner_image
 2026-11-17T11:42:08Z,44076225571,node,gha-min,10,174949325,20261111.127.1
+2026-11-17T11:44:05Z,44076225571,node,gha-max,16,632629226,20261111.127.1
