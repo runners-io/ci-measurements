@@ -4,23 +4,27 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: sequential, 10 s + 10 s
-        run: sleep 10; sleep 10
-      - name: two background steps, 10 s each
+      - name: sequential, 10 s then 10 s
+        run: |
+          date -u +%T; sleep 10; sleep 10; date -u +%T
+      - name: background a
         id: a
         background: true
-        run: sleep 10; echo "a=done" >> "$GITHUB_OUTPUT"
-      - name: second background step
+        run: |
+          sleep 10; echo "a=done" >> "$GITHUB_OUTPUT"
+      - name: background b
         id: b
         background: true
-        run: sleep 10; echo "b=done" >> "$GITHUB_OUTPUT"
-      - name: wait for both
+        run: |
+          sleep 10; echo "b=done" >> "$GITHUB_OUTPUT"
+      - name: wait for a and b
         wait: [a, b]
-      - name: parallel group, 10 s each
-        parallel:
+      - name: read their outputs
+        run: echo "a=${{ steps.a.outputs.a }} b=${{ steps.b.outputs.b }}"
+      - parallel:
           - name: p1
             run: sleep 10
           - name: p2
             run: sleep 10
       - name: after the group
-        run: echo "a=${{ steps.a.outputs.a }} b=${{ steps.b.outputs.b }}"
+        run: date -u +%T
