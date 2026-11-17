@@ -1,0 +1,59 @@
+# C1: one (profile, repetition): the cold runs of every arm, then the warm runs, then this pair's own cache entries deleted.
+# Pairs run a few at a time (see C1-sccache.yml), so the repository's cache never holds every repetition at once.
+name: C1 one pair
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        type: string
+        required: true
+      rep:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [none, target-cache, sccache-gha, sccache-local]
+    uses: ./.github/workflows/C1-run.yml
+    with:
+      arm: ${{ matrix.arm }}
+      phase: cold
+      rep: ${{ inputs.rep }}
+      profile: ${{ inputs.profile }}
+
+  warm:
+    needs: cold
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [target-cache, sccache-gha, sccache-local]
+    uses: ./.github/workflows/C1-run.yml
+    with:
+      arm: ${{ matrix.arm }}
+      phase: warm
+      rep: ${{ inputs.rep }}
+      profile: ${{ inputs.profile }}
+
+  cleanup:
+    needs: warm
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete this pair's caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # The keys this pair made. The sccache GHA backend's own "sccache/" keys are deleted once, by C1-sccache.yml, at the end.
+          gh cache list --key "c1-${{ github.run_id }}-${{ inputs.profile }}-${{ inputs.rep }}-" --limit 1000 --json id -q '.[].id' | while read -r id; do gh cache delete "$id" || true; done

@@ -1,5 +1,5 @@
 # C1: sccache on GitHub Actions, measured. Every arm builds the same Rust workspace (helix 25.07.1, pinned) on ubuntu-24.04,
-# once cold and once warm, on a fresh runner each time. See studies/C1-sccache/METHOD.md.
+# once cold and once warm, on a fresh runner each time, in two build profiles. See studies/C1-sccache/METHOD.md.
 name: C1 sccache
 
 on:
@@ -16,52 +16,29 @@ permissions:
   contents: read
 
 jobs:
-  cold:
+  pair:
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 3
       matrix:
-        arm: [none, target-cache, sccache-gha, sccache-local]
-        rep: ${{ fromJSON(inputs.reps) }}
         profile: ${{ fromJSON(inputs.profiles) }}
-    uses: ./.github/workflows/C1-run.yml
-    with:
-      arm: ${{ matrix.arm }}
-      phase: cold
-      rep: ${{ matrix.rep }}
-      profile: ${{ matrix.profile }}
-
-  warm:
-    needs: cold
-    if: ${{ !cancelled() }}
-    strategy:
-      fail-fast: false
-      max-parallel: 8
-      matrix:
-        arm: [target-cache, sccache-gha, sccache-local]
         rep: ${{ fromJSON(inputs.reps) }}
-        profile: ${{ fromJSON(inputs.profiles) }}
-    uses: ./.github/workflows/C1-run.yml
+    uses: ./.github/workflows/C1-pair.yml
     with:
-      arm: ${{ matrix.arm }}
-      phase: warm
-      rep: ${{ matrix.rep }}
       profile: ${{ matrix.profile }}
+      rep: ${{ matrix.rep }}
 
   cleanup:
-    needs: warm
+    needs: pair
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     permissions:
       actions: write
       contents: read
     steps:
-      - name: Delete this run's caches
+      - name: Delete the sccache GHA backend's entries
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          # Only the keys this study made: its own prefix, and the "sccache/" keys the sccache GHA backend writes.
-          for prefix in "c1-${{ github.run_id }}-" "sccache/"; do
-            gh cache list --key "$prefix" --limit 1000 --json id -q '.[].id' | while read -r id; do gh cache delete "$id" || true; done
-          done
+          gh cache list --key "sccache/" --limit 1000 --json id -q '.[].id' | while read -r id; do gh cache delete "$id" || true; done
