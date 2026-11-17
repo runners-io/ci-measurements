@@ -1,0 +1,7 @@
+kind,config,rep,base,n,pr,marked_fail,pr_state,pr_created,enqueue_issued,added_to_queue,times_added,merged_at,removed_at,removed_reason,seconds_enqueue_to_merge,event,run_id,run_conclusion,run_created,job_conclusion,job_started,job_completed,job_seconds,job_billed_minutes
+pr,c0,1,b2-mq-c0-r1,1,173,0,OPEN,2026-11-17T17:11:05Z,2026-11-17T17:12:07.559Z,2026-11-17T17:12:08Z,1,,2026-11-17T17:17:40Z,checks_timed_out,,,,,,,,,,
+run,c0,1,b2-mq-c0-r1,1,173,,,,,,,,,,,pull_request,44134155505,success,2026-11-17T17:11:09Z,success,2026-11-17T17:11:12Z,2026-11-17T17:11:55Z,43,1
+pr,c0,2,b2-mq-c0-r2,1,174,0,OPEN,2026-11-17T17:11:08Z,2026-11-17T17:12:10.430Z,2026-11-17T17:12:11Z,1,,2026-11-17T17:17:43Z,checks_timed_out,,,,,,,,,,
+run,c0,2,b2-mq-c0-r2,1,174,,,,,,,,,,,pull_request,44134167944,success,2026-11-17T17:11:13Z,success,2026-11-17T17:11:16Z,2026-11-17T17:11:57Z,41,1
+pr,c0,3,b2-mq-c0-r3,1,175,0,OPEN,2026-11-17T17:11:10Z,2026-11-17T17:12:12.903Z,2026-11-17T17:12:13Z,1,,2026-11-17T17:17:46Z,checks_timed_out,,,,,,,,,,
+run,c0,3,b2-mq-c0-r3,1,175,,,,,,,,,,,pull_request,44134174243,success,2026-11-17T17:11:16Z,success,2026-11-17T17:11:19Z,2026-11-17T17:12:03Z,44,1

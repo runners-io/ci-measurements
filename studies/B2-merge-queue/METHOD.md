@@ -43,10 +43,26 @@ We did not run the queue's "jump to the top" option.
 The study was cut to these sizes after the first version of the driver used too much of the account's shared API quota; a
 third configuration with a minimum group size of 5 (`c3`) was dropped and not run.
 
-## Not run
+## c0 and c5, run at 17:10 and 17:18 UTC
 
-Two further configurations were prepared (`rulesets/b2-c0.json`, `rulesets/b2-c5.json` and the branches `b2-mq-c0-*`,
-`b2-mq-c5-*`): `c0`, a workflow with no `merge_group` trigger, and `c5`, a pull-request run that skips the job so that only the
-merge group does the work. They were started at 12:30 UTC and stopped at once: from about 12:30 every job in this repository
-failed to start, with the annotation "The job was not started because your account is locked due to a billing issue". The
-post says it did not measure them. `run-all.sh` lists them as they were meant to run.
+Two further configurations were prepared at the same time as the others (`rulesets/b2-c0.json`, `rulesets/b2-c5.json`,
+branches `b2-mq-c0-*` and `b2-mq-c5-*`). They were first started at 12:30 UTC and stopped at once: from about 12:30 every job
+in this repository failed to start, with the annotation "The job was not started because your account is locked due to a
+billing issue". The organisation's plan had dropped to free; it was restored at about 12:55 UTC. Both were run again later the
+same day, with the same driver.
+
+| config | workflow on the base branch | ruleset | pull requests |
+|---|---|---|---|
+| `c0` | triggers on `pull_request` only, no `merge_group` | build concurrency 5, groups 1 / 5, check timeout 5 minutes | 3 queues of 1 (3) |
+| `c5` | `pull_request` and `merge_group`; the job has `if: github.event_name == 'merge_group'`, so the pull-request run skips it | build concurrency 5, groups 1 / 5, check timeout 15 minutes | 3 queues of 3 (9) |
+
+What they showed (`results/queue-c0-11171710.csv`, `results/queue-c5-11171718.csv`):
+
+- `c0`: no `merge_group` run started, so the required `check` never reported on the merge group. Each pull request was
+  removed from the queue with the reason `checks_timed_out` 332 to 333 seconds after it was added (the ruleset's 5-minute
+  check timeout), and stayed open. Its own pull-request run had passed (3 runs, 3 job-minutes).
+- `c5`: all 9 pull requests merged, each in 86 to 95 seconds from being queued. The 9 pull-request runs concluded `skipped`
+  and billed 0 minutes; the required `check` was satisfied by the skipped job. The 9 merge-group runs billed 9 minutes: one
+  minute a pull request, against two (one pull-request run and one merge-group run) in `c1`.
+
+`run-all.sh` lists every configuration as it was run.
