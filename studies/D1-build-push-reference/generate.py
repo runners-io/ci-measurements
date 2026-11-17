@@ -154,7 +154,7 @@ def harness(name, t):
     reset = """      - name: Remove the builder and everything it held, as a new runner would
         run: |
           docker buildx rm --force --all-inactive || true
-          for b in $(docker buildx ls --format '{{.Name}}' | grep -v -x -e default -e desktop-linux || true); do docker buildx rm --force "$b"; done
+          for b in $(docker buildx ls --format '{{.Name}}' | grep -v -x -e default -e desktop-linux || true); do docker buildx rm --force "$b" || true; done
           docker system prune --all --force >/dev/null
 """
     read = """      - name: Read /stamp from the image just pushed
