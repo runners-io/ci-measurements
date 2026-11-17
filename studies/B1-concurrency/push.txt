@@ -1,1 +1,1 @@
-default-group rep 8 push 2
+default-group rep 8 push 3
