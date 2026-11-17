@@ -1,0 +1,24 @@
+# B1 (RUN-3056): what five pushes do under one concurrency setting. queue: max together with cancel-in-progress: true, which GitHub's docs say is a validation error.
+# A branch named b1-queue-max-cancel/<run> is pushed to five times in about ten seconds by
+# studies/B1-concurrency/drive.py; see studies/B1-concurrency/METHOD.md.
+name: B1 queue-max-cancel
+
+on:
+  push:
+    branches: ["b1-queue-max-cancel/**"]
+
+concurrency:
+  group: b1-queue-max-cancel-${{ github.ref }}
+  queue: max
+  cancel-in-progress: true
+
+jobs:
+  work:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Record the start and work for 40 seconds
+        run: |
+          echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ) sha=$GITHUB_SHA"
+          sleep 40
+          echo "finished $(date -u +%Y-%m-%dT%H:%M:%SZ)"

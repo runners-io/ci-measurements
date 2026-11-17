@@ -1,0 +1,19 @@
+# B1 (RUN-3056): what five pushes do under one concurrency setting. No concurrency key: the default.
+# A branch named b1-none/<run> is pushed to five times in about ten seconds by
+# studies/B1-concurrency/drive.py; see studies/B1-concurrency/METHOD.md.
+name: B1 none
+
+on:
+  push:
+    branches: ["b1-none/**"]
+
+jobs:
+  work:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Record the start and work for 40 seconds
+        run: |
+          echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ) sha=$GITHUB_SHA"
+          sleep 40
+          echo "finished $(date -u +%Y-%m-%dT%H:%M:%SZ)"

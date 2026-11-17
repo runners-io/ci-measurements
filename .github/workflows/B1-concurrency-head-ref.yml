@@ -1,0 +1,23 @@
+# B1 (RUN-3056): what five pushes do under one concurrency setting. The group GitHub's docs give as a fallback: github.head_ref || github.run_id, with cancel-in-progress: true.
+# A branch named b1-head-ref/<run> is pushed to five times in about ten seconds by
+# studies/B1-concurrency/drive.py; see studies/B1-concurrency/METHOD.md.
+name: B1 head-ref
+
+on:
+  push:
+    branches: ["b1-head-ref/**"]
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  work:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Record the start and work for 40 seconds
+        run: |
+          echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ) sha=$GITHUB_SHA"
+          sleep 40
+          echo "finished $(date -u +%Y-%m-%dT%H:%M:%SZ)"

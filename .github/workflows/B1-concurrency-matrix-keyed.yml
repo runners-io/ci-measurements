@@ -1,0 +1,26 @@
+# B1 (RUN-3056): what five pushes do under one concurrency setting. A job-level group that names the matrix leg, cancel-in-progress: true.
+# A branch named b1-matrix-keyed/<run> is pushed to five times in about ten seconds by
+# studies/B1-concurrency/drive.py; see studies/B1-concurrency/METHOD.md.
+name: B1 matrix-keyed
+
+on:
+  push:
+    branches: ["b1-matrix-keyed/**"]
+
+jobs:
+  work:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [a, b, c]
+    concurrency:
+      group: b1-matrix-keyed-${{ github.ref }}-${{ matrix.leg }}
+      cancel-in-progress: true
+    steps:
+      - name: Record the start and work for 40 seconds
+        run: |
+          echo "started $(date -u +%Y-%m-%dT%H:%M:%SZ) leg=${{ matrix.leg }} sha=$GITHUB_SHA"
+          sleep 40
+          echo "finished $(date -u +%Y-%m-%dT%H:%M:%SZ)"
