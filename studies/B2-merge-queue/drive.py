@@ -86,10 +86,25 @@ def one_rep(cfg, rep, n_prs, stamp, out, lock):
         raise SystemExit(f"{cfg} r{rep}: checks never passed on {sorted(pending)}")
     for p in prs:
         p["enqueue_issued"] = now_ms()
-        sh("gh", "pr", "merge", str(p["pr"]), "--repo", REPO, "--merge")
+        enqueue(p["pr"])
         p["enqueue_returned"] = now_ms()
     with lock:
         out.extend(prs)
+
+
+ENQUEUE = "mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{position state}}}"
+
+
+def enqueue(number):
+    """Add a pull request to its base branch's merge queue. `gh pr merge` would try auto-merge, which this repository leaves off."""
+    node_id = sh("gh", "pr", "view", str(number), "--repo", REPO, "--json", "id", "-q", ".id")
+    for attempt in range(5):
+        try:
+            sh("gh", "api", "graphql", "-f", f"query={ENQUEUE}", "-F", f"id={node_id}")
+            return
+        except subprocess.CalledProcessError:
+            time.sleep(2 * (attempt + 1))
+    raise SystemExit(f"could not enqueue PR {number}")
 
 
 def cmd_run(cfg, reps, n_prs):
