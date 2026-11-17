@@ -1,0 +1,161 @@
+name: G1 · what a timeout does
+
+# Five ways a job or a step can run into `timeout-minutes: 1`, five repetitions each, on GitHub-hosted
+# ubuntu-24.04. A public repository, so it costs nothing. Every job is meant to fail: the question is what
+# GitHub does to the process, to the steps after it and to the job's result. studies/G1-timeout/scripts/collect.py
+# reads the answers from the jobs API, the job logs and the check-run annotations. Method: studies/G1-timeout/METHOD.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  job-polite:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2, 3, 4, 5]
+    name: job-polite #${{ matrix.rep }}
+    steps:
+      - name: checkout measurements
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: the step that never finishes
+        id: victim
+        run: studies/G1-timeout/scripts/victim.sh polite
+      - name: next step, no condition
+        run: echo "ran -- next step, no condition"
+      - name: next step, if success()
+        if: success()
+        run: echo "ran -- if success()"
+      - name: next step, if failure()
+        if: failure()
+        run: echo "ran -- if failure()"
+      - name: next step, if cancelled()
+        if: cancelled()
+        run: echo "ran -- if cancelled()"
+      - name: next step, if always()
+        if: always()
+        run: echo "ran -- if always()"
+
+  job-stubborn:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2, 3, 4, 5]
+    name: job-stubborn #${{ matrix.rep }}
+    steps:
+      - name: checkout measurements
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: the step that never finishes
+        id: victim
+        run: studies/G1-timeout/scripts/victim.sh stubborn
+      - name: next step, no condition
+        run: echo "ran -- next step, no condition"
+      - name: next step, if success()
+        if: success()
+        run: echo "ran -- if success()"
+      - name: next step, if failure()
+        if: failure()
+        run: echo "ran -- if failure()"
+      - name: next step, if cancelled()
+        if: cancelled()
+        run: echo "ran -- if cancelled()"
+      - name: next step, if always()
+        if: always()
+        run: echo "ran -- if always()"
+
+  step-polite:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2, 3, 4, 5]
+    name: step-polite #${{ matrix.rep }}
+    steps:
+      - name: checkout measurements
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: the step that never finishes
+        id: victim
+        timeout-minutes: 1
+        run: studies/G1-timeout/scripts/victim.sh polite
+      - name: next step, no condition
+        run: echo "ran -- next step, no condition"
+      - name: next step, if success()
+        if: success()
+        run: echo "ran -- if success()"
+      - name: next step, if failure()
+        if: failure()
+        run: echo "ran -- if failure()"
+      - name: next step, if cancelled()
+        if: cancelled()
+        run: echo "ran -- if cancelled()"
+      - name: next step, if always()
+        if: always()
+        run: echo "ran -- if always()"
+
+  step-stubborn:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2, 3, 4, 5]
+    name: step-stubborn #${{ matrix.rep }}
+    steps:
+      - name: checkout measurements
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: the step that never finishes
+        id: victim
+        timeout-minutes: 1
+        run: studies/G1-timeout/scripts/victim.sh stubborn
+      - name: next step, no condition
+        run: echo "ran -- next step, no condition"
+      - name: next step, if success()
+        if: success()
+        run: echo "ran -- if success()"
+      - name: next step, if failure()
+        if: failure()
+        run: echo "ran -- if failure()"
+      - name: next step, if cancelled()
+        if: cancelled()
+        run: echo "ran -- if cancelled()"
+      - name: next step, if always()
+        if: always()
+        run: echo "ran -- if always()"
+
+  step-continue:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2, 3, 4, 5]
+    name: step-continue #${{ matrix.rep }}
+    steps:
+      - name: checkout measurements
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: the step that never finishes
+        id: victim
+        timeout-minutes: 1
+        continue-on-error: true
+        run: studies/G1-timeout/scripts/victim.sh polite
+      - name: next step, no condition
+        run: echo "ran -- next step, no condition"
+      - name: next step, if success()
+        if: success()
+        run: echo "ran -- if success()"
+      - name: next step, if failure()
+        if: failure()
+        run: echo "ran -- if failure()"
+      - name: next step, if cancelled()
+        if: cancelled()
+        run: echo "ran -- if cancelled()"
+      - name: next step, if always()
+        if: always()
+        run: echo "ran -- if always()"

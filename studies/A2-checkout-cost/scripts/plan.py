@@ -29,7 +29,6 @@ if kind == "history":
         # name, fetch-depth, filter, sparse-checkout, submodules
         ("control", "1", "", "", "false"),  # the checkout step is skipped: what the two clock readings cost alone
         ("default", "1", "", "", "false"),
-        ("depth2", "2", "", "", "false"),
         ("depth0", "0", "", "", "false"),
         ("depth0-blobnone", "0", "blob:none", "", "false"),
         ("depth0-tree0", "0", "tree:0", "", "false"),
