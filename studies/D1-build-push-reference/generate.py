@@ -169,6 +169,23 @@ TYPES["multiplatform"] = dict(
           grep -q 'linux/amd64' inspect.txt && grep -q 'linux/arm64' inspect.txt
 """,
 )
+TYPES["multiplatformbare"] = dict(
+    title="two platforms without setup-qemu-action",
+    pre="",
+    setup=BUILDX,
+    build="""      - uses: docker/build-push-action@v7
+        with:
+          context: studies/D1-build-push-reference
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+""",
+    proof="""      - name: The pushed tag lists both platforms, and the arm64 image runs
+        run: |
+          docker buildx imagetools inspect ghcr.io/${{ github.repository }}:d1-multiplatformbare | tee inspect.txt
+          grep -q 'linux/amd64' inspect.txt && grep -q 'linux/arm64' inspect.txt
+""",
+)
 
 def pin(text: str) -> str:
     for k, v in PIN.items():
