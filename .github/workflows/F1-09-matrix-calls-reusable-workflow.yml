@@ -1,0 +1,10 @@
+name: F1-09 matrix calls a reusable workflow
+on: workflow_dispatch
+jobs:
+  call:
+    strategy:
+      matrix:
+        version: ["1.0", "2.0", "3.0"]
+    uses: ./.github/workflows/F1-09-callee.yml
+    with:
+      version: ${{ matrix.version }}

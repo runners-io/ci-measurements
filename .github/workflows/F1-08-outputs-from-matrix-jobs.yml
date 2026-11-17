@@ -1,0 +1,24 @@
+name: F1-08 outputs from matrix jobs
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        version: [a, b, c]
+    outputs:
+      # One output per leg, named after the leg. A single shared name would keep one leg's value only.
+      result_${{ matrix.version }}: ${{ steps.r.outputs.value }}
+      shared: ${{ steps.r.outputs.value }}
+    steps:
+      - id: r
+        run: echo "value=built-${{ matrix.version }}" >> "$GITHUB_OUTPUT"
+  report:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo "result_a=${{ needs.build.outputs.result_a }}"
+          echo "result_b=${{ needs.build.outputs.result_b }}"
+          echo "result_c=${{ needs.build.outputs.result_c }}"
+          echo "shared=${{ needs.build.outputs.shared }}"

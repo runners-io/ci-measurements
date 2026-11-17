@@ -1,0 +1,23 @@
+name: F1-11 matrix size limit
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: number of matrix legs
+        default: "256"
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      legs: ${{ steps.p.outputs.legs }}
+    steps:
+      - id: p
+        run: echo "legs=$(python3 -c 'import json,sys;print(json.dumps(list(range(int(sys.argv[1])))))' "${{ inputs.count }}")" >> "$GITHUB_OUTPUT"
+  leg:
+    needs: plan
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        n: ${{ fromJSON(needs.plan.outputs.legs) }}
+    steps:
+      - run: echo "leg ${{ matrix.n }}"

@@ -1,0 +1,13 @@
+name: F1-03 include only
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - { task: lint, command: "echo running lint" }
+          - { task: unit, command: "echo running unit tests" }
+          - { task: e2e, command: "echo running end-to-end tests" }
+    steps:
+      - run: ${{ matrix.command }}

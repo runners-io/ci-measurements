@@ -1,0 +1,18 @@
+name: F1-05 include is processed after exclude
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.12", "3.13"]
+        exclude:
+          # A partial match is enough: this removes both Windows jobs.
+          - os: windows-2025
+        include:
+          # Processed after exclude, so this puts one Windows job back.
+          - os: windows-2025
+            python: "3.13"
+    steps:
+      - run: echo "${{ matrix.os }} with python ${{ matrix.python }}"

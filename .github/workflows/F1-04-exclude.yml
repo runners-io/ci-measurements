@@ -1,0 +1,14 @@
+name: F1-04 exclude
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.12", "3.13"]
+        exclude:
+          - os: windows-2025
+            python: "3.12"
+    steps:
+      - run: echo "${{ matrix.os }} with python ${{ matrix.python }}"

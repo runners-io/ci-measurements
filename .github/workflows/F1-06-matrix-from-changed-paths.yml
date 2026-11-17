@@ -1,0 +1,38 @@
+name: F1-06 matrix from changed paths
+on:
+  workflow_dispatch:
+    inputs:
+      paths:
+        description: "JSON array to use instead of the changed paths, for example []"
+        required: false
+        default: ""
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      dirs: ${{ steps.dirs.outputs.dirs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: dirs
+        env:
+          OVERRIDE: ${{ inputs.paths }}
+        run: |
+          if [ -n "$OVERRIDE" ]; then
+            echo "dirs=$OVERRIDE" >> "$GITHUB_OUTPUT"
+          else
+            dirs=$(git diff --name-only HEAD~1 HEAD -- studies | cut -d/ -f2 | sort -u | jq -R . | jq -sc .)
+            echo "dirs=$dirs" >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+  test:
+    needs: plan
+    # An empty array is not a matrix: without this guard the workflow fails at startup.
+    if: needs.plan.outputs.dirs != '[]'
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        dir: ${{ fromJSON(needs.plan.outputs.dirs) }}
+    steps:
+      - run: echo "would test studies/${{ matrix.dir }}"

@@ -1,0 +1,19 @@
+name: F1-02 include extends and adds
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+        node: [22, 24]
+        include:
+          # Fits the two node 22 combinations without overwriting anything: they gain npm.
+          - node: 22
+            npm: "10"
+          # Fits none of the four (node is 26), so it becomes a fifth job of its own.
+          - os: ubuntu-24.04
+            node: 26
+            experimental: true
+    steps:
+      - run: echo '${{ toJSON(matrix) }}'

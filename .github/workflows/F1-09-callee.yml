@@ -1,0 +1,12 @@
+name: F1-09 callee (reusable)
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "testing version ${{ inputs.version }}"

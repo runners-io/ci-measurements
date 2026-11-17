@@ -1,0 +1,20 @@
+name: F1-07 max-parallel and fail-fast
+on:
+  workflow_dispatch:
+    inputs:
+      fail_fast:
+        type: boolean
+        default: true
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: ${{ inputs.fail_fast }}
+      max-parallel: 2
+      matrix:
+        n: [1, 2, 3, 4, 5, 6]
+    steps:
+      - name: work
+        run: |
+          if [ "${{ matrix.n }}" = 2 ]; then sleep 5; echo "leg 2 fails"; exit 1; fi
+          sleep 25

@@ -1,0 +1,11 @@
+name: F1-01 OS by version
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04, windows-2025]
+        python: ["3.12", "3.13"]
+    steps:
+      - run: echo "${{ matrix.os }} with python ${{ matrix.python }}"
