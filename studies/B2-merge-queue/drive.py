@@ -23,8 +23,15 @@ def now_ms():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
-def sh(*args, cwd=None, check=True):
-    return subprocess.run(args, cwd=cwd, check=check, capture_output=True, text=True).stdout.strip()
+def sh(*args, cwd=None, check=True, retries=4):
+    """Run a command, retrying a few times (GitHub's secondary rate limits answer a burst of pushes and pull requests with a refusal)."""
+    for attempt in range(retries + 1):
+        got = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+        if got.returncode == 0 or not check:
+            return got.stdout.strip()
+        if attempt == retries:
+            raise SystemExit(f"{' '.join(args)} failed {retries + 1} times: {got.stderr.strip()[:400]}")
+        time.sleep(5 * (attempt + 1) + (hash((args, threading.get_ident())) % 5))
 
 
 def gh_api(path, *extra):
@@ -114,6 +121,7 @@ def cmd_run(cfg, reps, n_prs):
     threads = [threading.Thread(target=one_rep, args=(cfg, r, n_prs, stamp, out, lock)) for r in range(1, reps + 1)]
     for t in threads:
         t.start()
+        time.sleep(3)  # stagger the reps: five at once trips GitHub's secondary rate limit on pushes and pull requests
     for t in threads:
         t.join()
     path = os.path.join(RESULTS, f"prs-{cfg}-{stamp}.csv")

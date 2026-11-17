@@ -1,0 +1,4 @@
+{"name":"b2-c0","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/b2-mq-c0-r1","refs/heads/b2-mq-c0-r2","refs/heads/b2-mq-c0-r3"],"exclude":[]}},"rules":[
+ {"type":"merge_queue","parameters":{"check_response_timeout_minutes":5,"grouping_strategy":"ALLGREEN","max_entries_to_build":5,"max_entries_to_merge":5,"merge_method":"MERGE","min_entries_to_merge":1,"min_entries_to_merge_wait_minutes":5}},
+ {"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":false,"do_not_enforce_on_create":false,"required_status_checks":[{"context":"check"}]}}
+]}
