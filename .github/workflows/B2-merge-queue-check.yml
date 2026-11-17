@@ -3,11 +3,11 @@
 # studies/B2-merge-queue/prs/ makes the MERGE GROUP run fail (and the pull request run pass), which is how the study
 # plants "green alone, red once combined". See studies/B2-merge-queue/METHOD.md.
 name: B2 merge queue check
+# VARIANT c0: this branch's copy of the workflow has no merge_group trigger, on purpose.
 
 on:
   pull_request:
     branches: ["b2-mq-*"]
-  merge_group:
 
 permissions:
   contents: read
