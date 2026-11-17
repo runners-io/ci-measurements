@@ -1,0 +1,33 @@
+# B2 (RUN-4125): the one required check of the merge-queue study. It runs on a pull request into a study branch and
+# on a merge group, and does 30 seconds of work either way. A file whose name contains "fail" under
+# studies/B2-merge-queue/prs/ makes the MERGE GROUP run fail (and the pull request run pass), which is how the study
+# plants "green alone, red once combined". See studies/B2-merge-queue/METHOD.md.
+name: B2 merge queue check
+
+on:
+  pull_request:
+    branches: ["b2-mq-*"]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Work for 30 seconds
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "event=$EVENT ref=$GITHUB_REF sha=$GITHUB_SHA started $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          sleep 30
+          if [ "$EVENT" = "merge_group" ] && ls studies/B2-merge-queue/prs/ | grep -q fail; then
+            echo "a marked change is in this merge group"
+            exit 1
+          fi
+          echo "finished $(date -u +%Y-%m-%dT%H:%M:%SZ)"
