@@ -1,1 +1,1 @@
-none rep 1 push 1
+none rep 1 push 2
