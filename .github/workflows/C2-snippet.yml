@@ -23,6 +23,7 @@ jobs:
           echo "restore: $(( $(date +%s%3N) - T )) ms, hit='${{ steps.c.outputs.cache-hit }}'" >> "$GITHUB_STEP_SUMMARY"
           echo "T=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: npm ci
-      - run: echo "install: $(( $(date +%s%3N) - T )) ms" >> "$GITHUB_STEP_SUMMARY"
+      - run: |
+          echo "install: $(( $(date +%s%3N) - T )) ms" >> "$GITHUB_STEP_SUMMARY"
       - name: Show the summary the steps wrote
         run: cat "$GITHUB_STEP_SUMMARY"
