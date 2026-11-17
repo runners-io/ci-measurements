@@ -11,6 +11,8 @@ recipe as the blog post shows it; the only addition is the run-unique prefix ${{
 true miss however many times this workflow is run.
 
 Run: python3 studies/C3-cache-recipes/generate.py > .github/workflows/C3-recipes.yml
+     python3 studies/C3-cache-recipes/generate.py --fixed > .github/workflows/C3-recipes-fixed.yml   (the four ecosystems whose install
+     rewrites a file the key reads get an exclusion pattern; everything else is identical)
 """
 
 ECOS = [
@@ -26,7 +28,7 @@ ECOS = [
         install="pnpm install --frozen-lockfile", find="-name pnpm-lock.yaml",
     ),
     dict(
-        name="yarn", lock="yarn.lock", glob="'**/yarn.lock'",
+        name="yarn", lock="yarn.lock", glob="'**/yarn.lock'", glob_fixed="'**/yarn.lock', '!**/node_modules/**'",
         paths=["~/.cache/yarn"], measure=["$HOME/.cache/yarn"],
         install="yarn install --frozen-lockfile", find="-name yarn.lock",
     ),
@@ -43,7 +45,7 @@ ECOS = [
         install="poetry install --no-root", find="-name poetry.lock",
     ),
     dict(
-        name="gradle", lock="build.gradle", glob="'**/*.gradle*', '**/gradle-wrapper.properties'",
+        name="gradle", lock="build.gradle", glob="'**/*.gradle*', '**/gradle-wrapper.properties'", glob_fixed="'**/*.gradle*', '**/gradle-wrapper.properties', '!**/.gradle/**', '!**/build/**'",
         paths=["~/.gradle/caches", "~/.gradle/wrapper"], measure=["$HOME/.gradle/caches", "$HOME/.gradle/wrapper"],
         install="chmod +x gradlew && ./gradlew --no-daemon build -x test", find="\\( -path '*.gradle*' -o -name gradle-wrapper.properties \\)",
     ),
@@ -64,7 +66,7 @@ ECOS = [
         install="go build ./...", find="-name go.sum",
     ),
     dict(
-        name="bundler", lock="Gemfile.lock", glob="'**/Gemfile.lock'",
+        name="bundler", lock="Gemfile.lock", glob="'**/Gemfile.lock'", glob_fixed="'**/Gemfile.lock', '!vendor/**'",
         paths=["vendor/bundle"], measure=["vendor/bundle"],
         setup=["uses: ruby/setup-ruby@v1\n        with:\n          ruby-version: \"3.3\""],
         pre="bundle config set --local path vendor/bundle",
@@ -76,7 +78,7 @@ ECOS = [
         install="dotnet restore --locked-mode", find="-name packages.lock.json",
     ),
     dict(
-        name="composer", lock="composer.lock", glob="'**/composer.lock'",
+        name="composer", lock="composer.lock", glob="'**/composer.lock'", glob_fixed="'**/composer.lock', '!vendor/**'",
         paths=["~/.cache/composer/files"], measure=["$HOME/.cache/composer/files"],
         install="composer install --no-interaction --no-progress", find="-name composer.lock",
     ),
@@ -236,7 +238,13 @@ def job(e, phase, needs):
 
 
 def main():
-    out = [HEAD.rstrip("\n")]
+    import sys
+
+    if "--fixed" in sys.argv:
+        for e in ECOS:
+            if "glob_fixed" in e:
+                e["glob"] = e["glob_fixed"]
+    out = [HEAD.rstrip("\n").replace("name: C3 cache recipes", "name: C3 cache recipes" + (" (exclusion patterns)" if "--fixed" in sys.argv else ""))]
     for e in ECOS:
         out.append(job(e, "cold", None))
         out.append(job(e, "warm", f"{e['name']}-cold"))
