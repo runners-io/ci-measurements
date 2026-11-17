@@ -34,25 +34,41 @@ def sh(*args, cwd=None, check=True, retries=4):
         time.sleep(5 * (attempt + 1) + (hash((args, threading.get_ident())) % 5))
 
 
+_calls = 0
+
+
+def quota_guard():
+    """Called before every REST call: at most one call every 3 seconds (about 20 a minute), and a check of the shared quota every 20 calls.
+
+    The quota (5,000 an hour) is shared with other people's jobs and with the merge waiters. Below 1,000 left, sleep until
+    the reset rather than spend the rest (RUN-4125: the first version of this driver ran the account dry).
+    """
+    global _calls
+    _calls += 1
+    time.sleep(3.0)
+    if _calls % 20 == 1:
+        got = json.loads(subprocess.run(["gh", "api", "rate_limit"], capture_output=True, text=True).stdout)["resources"]["core"]
+        if got["remaining"] < 1000:
+            raise SystemExit(f"stopping: only {got['remaining']} REST calls left in the shared quota (below 1,000)")
+
+
 def gh_api(path, *extra):
-    for attempt in range(6):
-        try:
-            return json.loads(sh("gh", "api", path, *extra))
-        except subprocess.CalledProcessError:
-            time.sleep(2 * (attempt + 1))
-    raise SystemExit(f"gh api {path} failed")
+    quota_guard()
+    got = subprocess.run(["gh", "api", path, *extra], capture_output=True, text=True)
+    if got.returncode != 0:
+        raise SystemExit(f"gh api {path} failed (not retried; a retry loop is how the quota was spent): {got.stderr.strip()[:300]}")
+    return json.loads(got.stdout)
 
 
 def graphql(query, **vars_):
     args = ["gh", "api", "graphql", "-f", f"query={query}"]
     for k, v in vars_.items():
-        args += ["-F", f"{k}={v}"]
-    for attempt in range(6):
-        try:
-            return json.loads(sh(*args))
-        except subprocess.CalledProcessError:
-            time.sleep(2 * (attempt + 1))
-    raise SystemExit("graphql failed")
+        if isinstance(v, list):
+            for item in v:
+                args += ["-f", f"{k}[]={item}"]
+        else:
+            args += ["-F", f"{k}={v}"]
+    return json.loads(sh(*args))
 
 
 def parse(ts):
@@ -78,40 +94,44 @@ def one_rep(cfg, rep, n_prs, stamp, out, lock):
             sh("git", "push", "-q", "origin", f"HEAD:refs/heads/{branch}", cwd=d)
             url = sh("gh", "pr", "create", "--repo", REPO, "--base", base, "--head", branch, "--title", f"b2 {cfg} r{rep} n{n} {stamp}", "--body", "A pull request of the merge-queue study (studies/B2-merge-queue). Safe to ignore.")
             number = int(url.rsplit("/", 1)[1])
+            node_id = sh("gh", "pr", "view", str(number), "--repo", REPO, "--json", "id", "-q", ".id")
             head = sh("git", "rev-parse", "HEAD", cwd=d)
-            prs.append({"config": cfg, "rep": rep, "base": base, "n": n, "branch": branch, "pr": number, "head_sha": head, "marked_fail": int(fail)})
-    # Wait until every pull request's own check has passed, then enqueue them in order, back to back.
+            prs.append({"config": cfg, "rep": rep, "base": base, "n": n, "branch": branch, "pr": number, "node_id": node_id, "head_sha": head, "marked_fail": int(fail)})
+    # Wait until every pull request's own check has passed: one GraphQL call per poll (the REST quota is shared and small).
     deadline = time.time() + 900
-    pending = {p["pr"]: p for p in prs}
-    while pending and time.time() < deadline:
-        for number, p in list(pending.items()):
-            runs = gh_api(f"repos/{REPO}/commits/{p['head_sha']}/check-runs?check_name=check")["check_runs"]
-            if any(r["conclusion"] == "success" for r in runs):
-                del pending[number]
-        time.sleep(5)
-    if pending:
-        raise SystemExit(f"{cfg} r{rep}: checks never passed on {sorted(pending)}")
+    while time.time() < deadline:
+        states = rollup_states([p["node_id"] for p in prs])
+        if all(st == "SUCCESS" for st in states.values()):
+            break
+        time.sleep(60)
+    else:
+        raise SystemExit(f"{cfg} r{rep}: checks never passed: {states}")
     for p in prs:
         p["enqueue_issued"] = now_ms()
-        enqueue(p["pr"])
+        enqueue(p["node_id"])
         p["enqueue_returned"] = now_ms()
     with lock:
         out.extend(prs)
 
 
+ROLLUP = """query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}"""
+
+
+def rollup_states(ids):
+    got = graphql(ROLLUP, ids=ids)
+    out = {}
+    for n in got["data"]["nodes"]:
+        c = n["commits"]["nodes"][0]["commit"]["statusCheckRollup"]
+        out[n["id"]] = c["state"] if c else "NONE"
+    return out
+
+
 ENQUEUE = "mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{position state}}}"
 
 
-def enqueue(number):
+def enqueue(node_id):
     """Add a pull request to its base branch's merge queue. `gh pr merge` would try auto-merge, which this repository leaves off."""
-    node_id = sh("gh", "pr", "view", str(number), "--repo", REPO, "--json", "id", "-q", ".id")
-    for attempt in range(5):
-        try:
-            sh("gh", "api", "graphql", "-f", f"query={ENQUEUE}", "-F", f"id={node_id}")
-            return
-        except subprocess.CalledProcessError:
-            time.sleep(2 * (attempt + 1))
-    raise SystemExit(f"could not enqueue PR {number}")
+    sh("gh", "api", "graphql", "-f", f"query={ENQUEUE}", "-F", f"id={node_id}")
 
 
 def cmd_run(cfg, reps, n_prs):
@@ -125,7 +145,7 @@ def cmd_run(cfg, reps, n_prs):
     for t in threads:
         t.join()
     path = os.path.join(RESULTS, f"prs-{cfg}-{stamp}.csv")
-    fields = ["config", "rep", "base", "n", "branch", "pr", "head_sha", "marked_fail", "enqueue_issued", "enqueue_returned"]
+    fields = ["config", "rep", "base", "n", "branch", "pr", "node_id", "head_sha", "marked_fail", "enqueue_issued", "enqueue_returned"]
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
@@ -135,26 +155,23 @@ def cmd_run(cfg, reps, n_prs):
     cmd_collect(cfg, stamp)
 
 
-TIMELINE = """query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){
- state createdAt mergedAt closedAt
+TIMELINE = """query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id number state createdAt mergedAt closedAt
  timelineItems(first:60,itemTypes:[ADDED_TO_MERGE_QUEUE_EVENT,REMOVED_FROM_MERGE_QUEUE_EVENT,MERGED_EVENT]){nodes{__typename
   ... on AddedToMergeQueueEvent{createdAt}
   ... on RemovedFromMergeQueueEvent{createdAt reason}
   ... on MergedEvent{createdAt}}}}}}"""
 
 
-def pr_state(number):
-    return graphql(TIMELINE, o=OWNER, r=NAME, n=number)["data"]["repository"]["pullRequest"]
+def pr_states(ids):
+    """Every pull request's state and queue events, one GraphQL call for all of them, keyed by node id."""
+    return {n["id"]: n for n in graphql(TIMELINE, ids=ids)["data"]["nodes"]}
 
 
-def terminal(number):
-    pr = pr_state(number)
+def is_terminal(pr):
     if pr["state"] != "OPEN":
-        return pr
+        return True
     events = [e["__typename"] for e in pr["timelineItems"]["nodes"]]
-    if events and events[-1] == "RemovedFromMergeQueueEvent":
-        return pr
-    return None
+    return bool(events) and events[-1] == "RemovedFromMergeQueueEvent"
 
 
 def job_rows(run_id):
@@ -169,30 +186,40 @@ def job_rows(run_id):
 
 def cmd_collect(cfg, stamp):
     prs = list(csv.DictReader(open(os.path.join(RESULTS, f"prs-{cfg}-{stamp}.csv"))))
+    ids = [p["node_id"] for p in prs]
     # 1. wait until every pull request has merged or been removed from the queue (up to 45 minutes)
-    deadline, done = time.time() + 2700, {}
-    while time.time() < deadline and len(done) < len(prs):
-        for p in prs:
-            if p["pr"] not in done:
-                got = terminal(p["pr"])
-                if got:
-                    done[p["pr"]] = got
-        if len(done) < len(prs):
-            time.sleep(10)
-    # 2. wait until no merge-group run is still going
-    while time.time() < deadline:
-        busy = 0
-        for base in sorted({p["base"] for p in prs}):
-            runs = gh_api(f"repos/{REPO}/actions/runs?event=merge_group&per_page=100")["workflow_runs"]
-            busy += sum(1 for r in runs if r["head_branch"].startswith(f"gh-readonly-queue/{base}/") and r["status"] != "completed")
+    deadline = time.time() + 2700
+    while True:
+        states = pr_states(ids)
+        if all(is_terminal(st) for st in states.values()) or time.time() > deadline:
             break
-        if busy == 0:
+        time.sleep(60)
+    # 2. one listing of the workflow's merge-group runs and one of its pull-request runs (a page of 100 each; a second page only if
+    #    the first is full), repeated once a minute only while a merge-group run is still going.
+    wf = f"repos/{REPO}/actions/workflows/B2-merge-queue-check.yml/runs"
+
+    def listing(event):
+        out, page = [], 1
+        while page <= 4:
+            got = gh_api(f"{wf}?event={event}&per_page=100&page={page}")["workflow_runs"]
+            out += got
+            if len(got) < 100:
+                break
+            page += 1
+        return out
+
+    bases = sorted({p["base"] for p in prs})
+    mine = lambda r: any(r["head_branch"].startswith(f"gh-readonly-queue/{b}/") for b in bases)
+    while True:
+        mg_runs = [r for r in listing("merge_group") if mine(r)]
+        if not any(r["status"] != "completed" for r in mg_runs) or time.time() > deadline:
             break
-        time.sleep(10)
+        time.sleep(60)
+    pr_runs = {r["head_branch"]: r for r in listing("pull_request")}
     rows = []
     pr_by_number = {p["pr"]: p for p in prs}
     for p in prs:
-        s = pr_state(p["pr"])
+        s = states[p["node_id"]]
         ev = s["timelineItems"]["nodes"]
         added = [e["createdAt"] for e in ev if e["__typename"] == "AddedToMergeQueueEvent"]
         removed = [(e["createdAt"], e.get("reason")) for e in ev if e["__typename"] == "RemovedFromMergeQueueEvent"]
@@ -202,36 +229,19 @@ def cmd_collect(cfg, stamp):
                      "added_to_queue": added[0] if added else "", "times_added": len(added),
                      "merged_at": merged or "", "removed_at": removed[0][0] if removed else "", "removed_reason": removed[0][1] if removed else "",
                      "seconds_enqueue_to_merge": int((parse(merged) - parse(added[0])).total_seconds()) if merged and added else ""})
-        # the pull request's own check run
-        for r in gh_api(f"repos/{REPO}/actions/runs?event=pull_request&branch={p['branch']}&per_page=20")["workflow_runs"]:
-            if r["name"] != CHECK:
-                continue
+        r = pr_runs.get(p["branch"])
+        if r:  # the pull request's own check run; its jobs are read once, now that the run has completed
             for j in job_rows(r["id"]):
                 rows.append({"kind": "run", "config": p["config"], "rep": p["rep"], "base": p["base"], "n": p["n"], "pr": p["pr"], "event": "pull_request",
                              "run_id": r["id"], "run_conclusion": r["conclusion"], "run_created": r["created_at"], **j})
-    # the merge-group runs for each base branch
-    seen = set()
-    for base in sorted({p["base"] for p in prs}):
-        page = 1
-        while True:
-            runs = gh_api(f"repos/{REPO}/actions/runs?event=merge_group&per_page=100&page={page}")["workflow_runs"]
-            if not runs:
-                break
-            for r in runs:
-                hb = r["head_branch"]
-                if r["name"] != CHECK or not hb.startswith(f"gh-readonly-queue/{base}/") or r["id"] in seen:
-                    continue
-                pr_no = int(hb.rsplit("/", 1)[1].split("-")[1])
-                if str(pr_no) not in pr_by_number:
-                    continue  # an earlier pilot's entry on the same base branch
-                seen.add(r["id"])
-                p = pr_by_number[str(pr_no)]
-                for j in job_rows(r["id"]):
-                    rows.append({"kind": "run", "config": p["config"], "rep": p["rep"], "base": base, "n": p["n"], "pr": pr_no, "event": "merge_group",
-                                 "run_id": r["id"], "run_conclusion": r["conclusion"], "run_created": r["created_at"], **j})
-            page += 1
-            if page > 6:
-                break
+    for r in mg_runs:
+        pr_no = r["head_branch"].rsplit("/", 1)[1].split("-")[1]
+        if pr_no not in pr_by_number:
+            continue  # an earlier pilot's entry on the same base branch
+        p = pr_by_number[pr_no]
+        for j in job_rows(r["id"]):
+            rows.append({"kind": "run", "config": p["config"], "rep": p["rep"], "base": p["base"], "n": p["n"], "pr": int(pr_no), "event": "merge_group",
+                         "run_id": r["id"], "run_conclusion": r["conclusion"], "run_created": r["created_at"], **j})
     fields = ["kind", "config", "rep", "base", "n", "pr", "marked_fail", "pr_state", "pr_created", "enqueue_issued", "added_to_queue", "times_added", "merged_at", "removed_at", "removed_reason", "seconds_enqueue_to_merge",
               "event", "run_id", "run_conclusion", "run_created", "job_conclusion", "job_started", "job_completed", "job_seconds", "job_billed_minutes"]
     path = os.path.join(RESULTS, f"queue-{cfg}-{stamp}.csv")

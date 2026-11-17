@@ -1,6 +1,0 @@
-rep,pr,seconds_after_open,merge_state_status,mergeable,checks_listed,workflow_runs_for_the_branch
-1,14,20,BLOCKED,MERGEABLE,0,0
-2,11,20,BLOCKED,MERGEABLE,0,0
-3,13,20,BLOCKED,MERGEABLE,0,0
-4,5,20,BLOCKED,MERGEABLE,0,0
-5,12,20,BLOCKED,MERGEABLE,0,0

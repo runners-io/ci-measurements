@@ -12,7 +12,7 @@ import csv, datetime, json, os, subprocess, sys, tempfile, threading, time
 
 REPO = "runners-io/ci-measurements"
 HERE = os.path.dirname(os.path.abspath(__file__))
-READ_AT = [20, 60, 120]
+READ_AT = [20, 90]
 
 
 def sh(*a, cwd=None):
@@ -37,6 +37,7 @@ def one(rep, stamp, rows, lock):
     for k in READ_AT:
         time.sleep(max(0, t0 + k - time.time()))
         pr = json.loads(sh("gh", "pr", "view", number, "--repo", REPO, "--json", "mergeStateStatus,mergeable,statusCheckRollup,state"))
+        time.sleep(3)
         runs = json.loads(sh("gh", "api", f"repos/{REPO}/actions/runs?event=pull_request&branch={branch}"))["workflow_runs"]
         with lock:
             rows.append({"rep": rep, "pr": number, "seconds_after_open": k, "merge_state_status": pr["mergeStateStatus"], "mergeable": pr["mergeable"],
