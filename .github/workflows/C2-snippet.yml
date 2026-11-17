@@ -1,0 +1,28 @@
+# C2: runs, as written, the timing snippet printed in the blog post "When does a GitHub Actions cache cost more than it saves?".
+name: C2 timing snippet
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snippet:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: cp -a studies/C3-cache-recipes/fixtures/npm/. .
+      - run: echo "T=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - id: c
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-snippet-${{ hashFiles('package-lock.json') }}
+      - run: |
+          echo "restore: $(( $(date +%s%3N) - T )) ms, hit='${{ steps.c.outputs.cache-hit }}'" >> "$GITHUB_STEP_SUMMARY"
+          echo "T=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: echo "install: $(( $(date +%s%3N) - T )) ms" >> "$GITHUB_STEP_SUMMARY"
+      - name: Show the summary the steps wrote
+        run: cat "$GITHUB_STEP_SUMMARY"
