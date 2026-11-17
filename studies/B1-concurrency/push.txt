@@ -1,1 +1,1 @@
-queue-max rep 5 push 4
+queue-max rep 5 push 5
