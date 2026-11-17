@@ -22,10 +22,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Start MinIO, an S3-compatible server, and make a bucket
+      - name: Start an S3-compatible server (Adobe S3Mock) with a bucket
         run: |
-          docker run -d --name minio --network host -e MINIO_ROOT_USER=d1access -e MINIO_ROOT_PASSWORD=d1secret-d1secret quay.io/minio/minio server /data
-          docker run --rm --network host --entrypoint sh quay.io/minio/mc -c 'until mc alias set d1 http://127.0.0.1:9000 d1access d1secret-d1secret; do sleep 1; done; mc mb d1/buildcache'
+          docker run -d --name s3mock --network host -e initialBuckets=buildcache -e COM_ADOBE_TESTING_S3MOCK_STORE_REGION=us-east-1 adobe/s3mock
+          until curl -fs http://127.0.0.1:9090/ >/dev/null || curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9090/ | grep -q 200; do sleep 1; done
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: network=host
@@ -34,8 +34,8 @@ jobs:
           context: studies/D1-build-push-reference
           push: true
           tags: ghcr.io/${{ github.repository }}:d1-s3
-          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9000,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret
-          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9000,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret,mode=max
+          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret
+          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret,mode=max
       - name: Read /stamp from the image just pushed
         id: first
         run: echo "stamp=$(docker run --rm ghcr.io/${{ github.repository }}:d1-s3)" >> "$GITHUB_OUTPUT"
@@ -52,8 +52,8 @@ jobs:
           context: studies/D1-build-push-reference
           push: true
           tags: ghcr.io/${{ github.repository }}:d1-s3
-          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9000,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret
-          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9000,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret,mode=max
+          cache-from: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret
+          cache-to: type=s3,region=us-east-1,bucket=buildcache,name=app,endpoint_url=http://127.0.0.1:9090,use_path_style=true,access_key_id=d1access,secret_access_key=d1secret-d1secret,mode=max
       - name: Read /stamp from the image just pushed
         id: second
         run: echo "stamp=$(docker run --rm ghcr.io/${{ github.repository }}:d1-s3)" >> "$GITHUB_OUTPUT"
