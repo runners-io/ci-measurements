@@ -94,9 +94,11 @@ name: C3 cache recipes
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   PFX: c3-${{ github.run_id }}
@@ -232,7 +234,7 @@ def job(e, phase, needs):
         "          cat out/row.csv"
     )
     lines.append(
-        f"      - uses: actions/upload-artifact@v7\n        with:\n          name: c3-{name}-{phase}\n          path: out/"
+        f"      - uses: actions/upload-artifact@v7\n        with:\n          name: {{TAG}}-{name}-{phase}\n          path: out/"
     )
     return "\n".join(lines)
 
@@ -244,7 +246,8 @@ def main():
         for e in ECOS:
             if "glob_fixed" in e:
                 e["glob"] = e["glob_fixed"]
-    out = [HEAD.rstrip("\n").replace("name: C3 cache recipes", "name: C3 cache recipes" + (" (exclusion patterns)" if "--fixed" in sys.argv else ""))]
+    tag = "c3f" if "--fixed" in sys.argv else "c3"
+    out = [HEAD.rstrip("\n").replace("PFX: c3-${{ github.run_id }}", "PFX: " + tag + "-${{ github.run_id }}").replace("name: C3 cache recipes", "name: C3 cache recipes" + (" (exclusion patterns)" if "--fixed" in sys.argv else ""))]
     for e in ECOS:
         out.append(job(e, "cold", None))
         out.append(job(e, "warm", f"{e['name']}-cold"))
@@ -264,7 +267,7 @@ def main():
         run: |
           gh cache list --key "${PFX}-" --limit 1000 --json id -q '.[].id' | while read -r id; do gh cache delete "$id" || true; done""" % ", ".join(f"{e['name']}-edit" for e in ECOS)
     out.append(cleanup)
-    print("\n\n".join(out))
+    print("\n\n".join(out).replace("{TAG}", tag))
 
 
 main()

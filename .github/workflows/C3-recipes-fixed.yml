@@ -8,12 +8,14 @@ name: C3 cache recipes (exclusion patterns)
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
+  actions: read
 
 env:
-  PFX: c3-${{ github.run_id }}
+  PFX: c3f-${{ github.run_id }}
 
 jobs:
 
@@ -94,7 +96,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-npm-cold
+          name: c3f-npm-cold
           path: out/
 
   npm-warm:
@@ -167,7 +169,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-npm-warm
+          name: c3f-npm-warm
           path: out/
 
   npm-edit:
@@ -244,7 +246,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-npm-edit
+          name: c3f-npm-edit
           path: out/
 
   pnpm-cold:
@@ -325,7 +327,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-pnpm-cold
+          name: c3f-pnpm-cold
           path: out/
 
   pnpm-warm:
@@ -399,7 +401,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-pnpm-warm
+          name: c3f-pnpm-warm
           path: out/
 
   pnpm-edit:
@@ -477,7 +479,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-pnpm-edit
+          name: c3f-pnpm-edit
           path: out/
 
   yarn-cold:
@@ -557,7 +559,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-yarn-cold
+          name: c3f-yarn-cold
           path: out/
 
   yarn-warm:
@@ -630,7 +632,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-yarn-warm
+          name: c3f-yarn-warm
           path: out/
 
   yarn-edit:
@@ -707,7 +709,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-yarn-edit
+          name: c3f-yarn-edit
           path: out/
 
   pip-cold:
@@ -790,7 +792,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-pip-cold
+          name: c3f-pip-cold
           path: out/
 
   pip-warm:
@@ -866,7 +868,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-pip-warm
+          name: c3f-pip-warm
           path: out/
 
   pip-edit:
@@ -946,7 +948,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-pip-edit
+          name: c3f-pip-edit
           path: out/
 
   poetry-cold:
@@ -1032,7 +1034,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-poetry-cold
+          name: c3f-poetry-cold
           path: out/
 
   poetry-warm:
@@ -1110,7 +1112,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-poetry-warm
+          name: c3f-poetry-warm
           path: out/
 
   poetry-edit:
@@ -1192,7 +1194,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-poetry-edit
+          name: c3f-poetry-edit
           path: out/
 
   gradle-cold:
@@ -1274,7 +1276,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-gradle-cold
+          name: c3f-gradle-cold
           path: out/
 
   gradle-warm:
@@ -1348,7 +1350,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-gradle-warm
+          name: c3f-gradle-warm
           path: out/
 
   gradle-edit:
@@ -1426,7 +1428,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-gradle-edit
+          name: c3f-gradle-edit
           path: out/
 
   maven-cold:
@@ -1506,7 +1508,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-maven-cold
+          name: c3f-maven-cold
           path: out/
 
   maven-warm:
@@ -1579,7 +1581,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-maven-warm
+          name: c3f-maven-warm
           path: out/
 
   maven-edit:
@@ -1656,7 +1658,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-maven-edit
+          name: c3f-maven-edit
           path: out/
 
   cargo-cold:
@@ -1742,7 +1744,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-cargo-cold
+          name: c3f-cargo-cold
           path: out/
 
   cargo-warm:
@@ -1818,7 +1820,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-cargo-warm
+          name: c3f-cargo-warm
           path: out/
 
   cargo-edit:
@@ -1898,7 +1900,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-cargo-edit
+          name: c3f-cargo-edit
           path: out/
 
   go-cold:
@@ -1980,7 +1982,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-go-cold
+          name: c3f-go-cold
           path: out/
 
   go-warm:
@@ -2054,7 +2056,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-go-warm
+          name: c3f-go-warm
           path: out/
 
   go-edit:
@@ -2132,7 +2134,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-go-edit
+          name: c3f-go-edit
           path: out/
 
   bundler-cold:
@@ -2216,7 +2218,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-bundler-cold
+          name: c3f-bundler-cold
           path: out/
 
   bundler-warm:
@@ -2293,7 +2295,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-bundler-warm
+          name: c3f-bundler-warm
           path: out/
 
   bundler-edit:
@@ -2374,7 +2376,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-bundler-edit
+          name: c3f-bundler-edit
           path: out/
 
   nuget-cold:
@@ -2454,7 +2456,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-nuget-cold
+          name: c3f-nuget-cold
           path: out/
 
   nuget-warm:
@@ -2527,7 +2529,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-nuget-warm
+          name: c3f-nuget-warm
           path: out/
 
   nuget-edit:
@@ -2604,7 +2606,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-nuget-edit
+          name: c3f-nuget-edit
           path: out/
 
   composer-cold:
@@ -2684,7 +2686,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-composer-cold
+          name: c3f-composer-cold
           path: out/
 
   composer-warm:
@@ -2757,7 +2759,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-composer-warm
+          name: c3f-composer-warm
           path: out/
 
   composer-edit:
@@ -2834,7 +2836,7 @@ jobs:
           cat out/row.csv
       - uses: actions/upload-artifact@v7
         with:
-          name: c3-composer-edit
+          name: c3f-composer-edit
           path: out/
 
   cleanup:

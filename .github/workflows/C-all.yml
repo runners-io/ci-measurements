@@ -1,0 +1,69 @@
+# Runs the whole C1, C2 and C3 campaign as ONE run: everything the three studies measured, in stages, then one
+# aggregate job that joins the rows into one artifact ("results"). Stages are serial so the studies do not share the
+# repository's cache service at the same moment, and so the cache never holds more than one stage's entries.
+name: C all
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  c3-recipes:
+    uses: ./.github/workflows/C3-recipes.yml
+  c3-recipes-fixed:
+    uses: ./.github/workflows/C3-recipes-fixed.yml
+  c3-clear:
+    uses: ./.github/workflows/C3-clear.yml
+
+  c2-grid:
+    needs: [c3-recipes, c3-recipes-fixed, c3-clear]
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/C2-grid.yml
+
+  c2-installs:
+    needs: c2-grid
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/C2-installs.yml
+
+  c1-pair:
+    needs: c2-installs
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        profile: [dev, release]
+        rep: [1, 2, 3, 4, 5]
+    uses: ./.github/workflows/C1-pair.yml
+    with:
+      profile: ${{ matrix.profile }}
+      rep: ${{ matrix.rep }}
+
+  c1-cleanup:
+    needs: c1-pair
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Delete the sccache GHA backend's entries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh cache list --key "sccache/" --limit 1000 --json id -q '.[].id' | while read -r id; do gh cache delete "$id" || true; done
+
+  aggregate:
+    needs: [c1-cleanup]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - run: python3 studies/C3-cache-recipes/aggregate.py artifacts results "${{ github.run_id }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: results
+          path: results/
