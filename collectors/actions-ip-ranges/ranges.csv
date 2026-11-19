@@ -1,2 +1,3 @@
 read_at_utc,run_id,actions_ranges,ipv4_ranges,ipv6_ranges,sha256,added_vs_previous_list,removed_vs_previous_list,list_file
 2026-11-17T10:09:35Z,44062177858,8350,5622,2728,151862697d3151edc6cc1e27ea4328736f038dbd0e2d6277dc2ba70da8b83bb8,,,lists/2026-11-17.txt
+2026-11-19T11:44:46Z,44517534646,8350,5622,2728,151862697d3151edc6cc1e27ea4328736f038dbd0e2d6277dc2ba70da8b83bb8,0,0,lists/2026-11-19.txt
